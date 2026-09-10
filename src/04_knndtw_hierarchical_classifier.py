@@ -16,6 +16,12 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold, cross_val_score
@@ -39,22 +45,27 @@ OUTPUT_MODEL_DIR = os.path.join('outputs', 'saved_models')
 OUTPUT_FIGURES_DIR = os.path.join('outputs', 'figures')
 
 
-def get_dtw_metric_func(constraint='sakoe_chiba', radius=15, slope=3):
-    """
-    Membangun fungsi metrik jarak DTW berkendala (Sakoe-Chiba / Itakura)
-    sesuai metode Vico Pratama untuk dipasangkan pada KNeighborsClassifier.
-    """
-    def dtw_dist(x, y):
+class DTWMetricWrapper:
+    """Kelas pembungkus callable metrik DTW agar dapat diserialisasi (picklable)."""
+    def __init__(self, constraint='sakoe_chiba', radius=15, slope=3):
+        self.constraint = constraint
+        self.radius = radius
+        self.slope = slope
+
+    def __call__(self, x, y):
         tx = to_time_series(x)
         ty = to_time_series(y)
-        if constraint == 'sakoe_chiba':
-            return dtw(tx, ty, global_constraint='sakoe_chiba', sakoe_chiba_radius=radius)
-        elif constraint == 'itakura':
-            return dtw(tx, ty, global_constraint='itakura', itakura_max_slope=slope)
+        if self.constraint == 'sakoe_chiba':
+            return dtw(tx, ty, global_constraint='sakoe_chiba', sakoe_chiba_radius=self.radius)
+        elif self.constraint == 'itakura':
+            return dtw(tx, ty, global_constraint='itakura', itakura_max_slope=self.slope)
         else:
             return dtw(tx, ty)
-            
-    return dtw_dist
+
+
+def get_dtw_metric_func(constraint='sakoe_chiba', radius=15, slope=3):
+    """Membangun objek metrik jarak DTW berkendala (Sakoe-Chiba / Itakura)."""
+    return DTWMetricWrapper(constraint=constraint, radius=radius, slope=slope)
 
 
 class HierarchicalKNNDTWClassifier:
@@ -150,5 +161,175 @@ class HierarchicalKNNDTWClassifier:
         print(f"[SIMPAN] Model Tahap 1 & 2 berhasil disimpan ke '{OUTPUT_MODEL_DIR}'.")
 
 
+def main():
+    print("=================================================================")
+    print(" [MODUL 4] PELATIHAN & EVALUASI KLASIFIKASI BERJENJANG DUA TAHAP")
+    print("           METODOLOGI VICO PRATAMA (2025): KNN-DTW")
+    print("=================================================================")
+    
+    # 1. Muat Matriks Deret Waktu EVI
+    matrix_path = EVI_MATRIX_CSV
+    if not os.path.exists(matrix_path):
+        fallback = os.path.join('data', 'processed', 'timeseries_evi_matrix_1988_2026.csv')
+        if os.path.exists(fallback):
+            matrix_path = fallback
+        else:
+            print(f"[ERROR] File matriks tidak ditemukan di '{matrix_path}'!")
+            return
+
+    print(f"[INFO] Membaca data time series EVI dari: '{matrix_path}'...")
+    df = pd.read_csv(matrix_path)
+    print(f" • Dimensi dataset: {df.shape[0]} klaster x {df.shape[1]} kolom")
+    
+    # Identifikasi kolom metadata vs kolom tanggal
+    meta_cols = [c for c in ['cluster_id', 'kelas_sawah', 'varietas'] if c in df.columns]
+    feature_cols = [c for c in df.columns if c not in meta_cols]
+    
+    # Jika kolom kelas_sawah belum ada, bangun dari varietas
+    if 'kelas_sawah' not in df.columns:
+        df['kelas_sawah'] = np.where(df['varietas'] == 'non-sawah', 'non-sawah', 'sawah')
+        
+    print(f" • Distribusi Kelas Sawah : {dict(df['kelas_sawah'].value_counts())}")
+    print(f" • Distribusi Varietas   : {dict(df['varietas'].value_counts())}")
+    print(f" • Jumlah Timestep Tanggal: {len(feature_cols)} titik observasi")
+    
+    X_all = df[feature_cols].values
+    y_stage1 = df['kelas_sawah'].values
+    
+    classifier = HierarchicalKNNDTWClassifier()
+    
+    # -------------------------------------------------------------
+    # TAHAP 1: KLASIFIKASI SAWAH VS NON-SAWAH
+    # -------------------------------------------------------------
+    print("\n-------------------------------------------------------------")
+    print(">>> PENCARIAN PARAMETER OPTIMAL TAHAP 1 (SAWAH VS NON-SAWAH)")
+    print("-------------------------------------------------------------")
+    best_acc_s1 = -1
+    best_params_s1 = {}
+    
+    for k in [3, 5, 7]:
+        for rad in [15, 30]:
+            metric_fn = get_dtw_metric_func(constraint='sakoe_chiba', radius=rad)
+            knn = KNeighborsClassifier(n_neighbors=k, metric=metric_fn)
+            skf = StratifiedKFold(n_splits=min(5, len(np.unique(y_stage1))), shuffle=True, random_state=42)
+            y_enc = classifier.le_stage1.fit_transform(y_stage1)
+            cv_scores = cross_val_score(knn, X_all, y_enc, cv=skf, scoring='accuracy')
+            mean_acc = np.mean(cv_scores)
+            print(f"   • Sakoe-Chiba (radius={rad:2d}), k={k:2d} -> CV Accuracy: {mean_acc*100:.2f}% (+/- {np.std(cv_scores)*100:.2f}%)")
+            if mean_acc > best_acc_s1:
+                best_acc_s1 = mean_acc
+                best_params_s1 = {'k': k, 'radius': rad}
+                
+    print(f"[TERBAIK] Parameter Terbaik Tahap 1: {best_params_s1} (Akurasi: {best_acc_s1*100:.2f}%)")
+    classifier.train_stage1_sawah_vs_nonsawah(X_all, y_stage1, k=best_params_s1['k'], radius=best_params_s1['radius'])
+    classifier.evaluate_model(classifier.model_stage1, classifier.le_stage1, X_all, y_stage1, stage_name="Tahap 1 Sawah vs Non-Sawah")
+    
+    # -------------------------------------------------------------
+    # TAHAP 2: KLASIFIKASI VARIETAS SPESIFIK (SRINUK VS NON-SRINUK)
+    # -------------------------------------------------------------
+    print("\n-------------------------------------------------------------")
+    print(">>> PENCARIAN PARAMETER OPTIMAL TAHAP 2 (SRINUK VS NON-SRINUK)")
+    print("-------------------------------------------------------------")
+    # Hanya data sawah yang masuk ke tahap 2
+    sawah_mask = df['kelas_sawah'] == 'sawah'
+    df_sawah = df[sawah_mask].reset_index(drop=True)
+    X_sawah = df_sawah[feature_cols].values
+    y_stage2 = np.where(df_sawah['varietas'] == 'Rojolele Srinuk', 'Rojolele Srinuk', 'Non-Srinuk')
+    
+    best_acc_s2 = -1
+    best_params_s2 = {}
+    
+    for k in [3, 5]:
+        for rad in [15, 30]:
+            metric_fn = get_dtw_metric_func(constraint='sakoe_chiba', radius=rad)
+            knn = KNeighborsClassifier(n_neighbors=k, metric=metric_fn)
+            skf = StratifiedKFold(n_splits=min(5, len(np.unique(y_stage2))), shuffle=True, random_state=42)
+            y_enc = classifier.le_stage2.fit_transform(y_stage2)
+            cv_scores = cross_val_score(knn, X_sawah, y_enc, cv=skf, scoring='accuracy')
+            mean_acc = np.mean(cv_scores)
+            print(f"   * Sakoe-Chiba (radius={rad:2d}), k={k:2d} -> CV Accuracy: {mean_acc*100:.2f}% (+/- {np.std(cv_scores)*100:.2f}%)")
+            if mean_acc > best_acc_s2:
+                best_acc_s2 = mean_acc
+                best_params_s2 = {'k': k, 'radius': rad}
+                
+    print(f"[TERBAIK] Parameter Terbaik Tahap 2: {best_params_s2} (Akurasi: {best_acc_s2*100:.2f}%)")
+    classifier.train_stage2_srinuk_vs_nonsrinuk(X_sawah, df_sawah['varietas'].values, k=best_params_s2['k'], radius=best_params_s2['radius'])
+    classifier.evaluate_model(classifier.model_stage2, classifier.le_stage2, X_sawah, y_stage2, stage_name="Tahap 2 Srinuk vs Non-Srinuk")
+    
+    # -------------------------------------------------------------
+    # EVALUASI AKHIR END-TO-END HIERARKIS
+    # -------------------------------------------------------------
+    print("\n=============================================================")
+    print(">>> EVALUASI KESELURUHAN PIPELINE BERJENJANG DUA TAHAP")
+    print("=============================================================")
+    # Tahap 1 Prediksi
+    pred_s1_enc = classifier.model_stage1.predict(X_all)
+    pred_s1_label = classifier.le_stage1.inverse_transform(pred_s1_enc)
+    
+    # Tahap 2 Prediksi untuk yang diprediksi 'sawah'
+    final_preds = []
+    for i, p1 in enumerate(pred_s1_label):
+        if p1 == 'non-sawah':
+            final_preds.append('non-sawah')
+        else:
+            sample = X_all[i:i+1]
+            p2_enc = classifier.model_stage2.predict(sample)
+            p2_label = classifier.le_stage2.inverse_transform(p2_enc)[0]
+            final_preds.append(p2_label)
+            
+    # Ground truth sejati 3 kelas
+    true_labels = []
+    for _, row in df.iterrows():
+        if row['kelas_sawah'] == 'non-sawah':
+            true_labels.append('non-sawah')
+        elif row['varietas'] == 'Rojolele Srinuk':
+            true_labels.append('Rojolele Srinuk')
+        else:
+            true_labels.append('Non-Srinuk')
+            
+    final_acc = accuracy_score(true_labels, final_preds)
+    final_prec = precision_score(true_labels, final_preds, average='weighted')
+    final_rec = recall_score(true_labels, final_preds, average='weighted')
+    final_f1 = f1_score(true_labels, final_preds, average='weighted')
+    
+    print(f"\n[HASIL] AKURASI KESELURUHAN (OVERALL ACCURACY) : {final_acc*100:.2f}%")
+    print(f"[HASIL] WEIGHTED PRECISION                     : {final_prec*100:.2f}%")
+    print(f"[HASIL] WEIGHTED RECALL                        : {final_rec*100:.2f}%")
+    print(f"[HASIL] WEIGHTED F1-SCORE                      : {final_f1*100:.2f}%")
+    print("\nDetail Laporan Klasifikasi Hierarkis:")
+    print(classification_report(true_labels, final_preds))
+    
+    # Simpan Confusion Matrix Gabungan
+    classes = ['non-sawah', 'Non-Srinuk', 'Rojolele Srinuk']
+    cm = confusion_matrix(true_labels, final_preds, labels=classes)
+    plt.figure(figsize=(7, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='YlGnBu', xticklabels=classes, yticklabels=classes)
+    plt.title('Confusion Matrix Keseluruhan (Klasifikasi Dua Tahap)')
+    plt.ylabel('Ground Truth Lapangan')
+    plt.xlabel('Prediksi Model KNN-DTW')
+    cm_path = os.path.join(OUTPUT_FIGURES_DIR, 'confusion_matrix_hierarkis_keseluruhan.png')
+    plt.savefig(cm_path, bbox_inches='tight', dpi=200)
+    plt.close()
+    print(f"[SIMPAN] Grafik Confusion Matrix Keseluruhan disimpan: '{cm_path}'")
+    
+    # Simpan Ringkasan Metrik ke CSV
+    metrics_summary = pd.DataFrame([
+        {'Metrik': 'Akurasi CV Tahap 1 (Sawah vs Non-Sawah)', 'Nilai': f"{best_acc_s1*100:.2f}%"},
+        {'Metrik': 'Akurasi CV Tahap 2 (Srinuk vs Non-Srinuk)', 'Nilai': f"{best_acc_s2*100:.2f}%"},
+        {'Metrik': 'Overall Accuracy Pipeline', 'Nilai': f"{final_acc*100:.2f}%"},
+        {'Metrik': 'Weighted F1-Score', 'Nilai': f"{final_f1*100:.2f}%"},
+        {'Metrik': 'Best Params Tahap 1', 'Nilai': str(best_params_s1)},
+        {'Metrik': 'Best Params Tahap 2', 'Nilai': str(best_params_s2)}
+    ])
+    metrics_csv = os.path.join('outputs', 'model_evaluation_metrics.csv')
+    metrics_summary.to_csv(metrics_csv, index=False)
+    print(f"[SIMPAN] Ringkasan metrik disimpan ke: '{metrics_csv}'")
+    
+    classifier.save_models()
+    print("=================================================================")
+    print(" [SELESAI] SELURUH EVALUASI KUALITAS MODEL BERHASIL DIJALANKAN!")
+    print("=================================================================")
+
+
 if __name__ == '__main__':
-    print("Modul HierarchicalKNNDTWClassifier siap digunakan.")
+    main()

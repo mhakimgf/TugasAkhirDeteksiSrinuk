@@ -171,13 +171,22 @@ def run_spatial_join_labeling(clusters_path=None, min_overlap=MIN_OVERLAP_RATIO)
     agg = intersection.groupby(['cluster_id', 'cluster_area', 'kelas_sawah', 'varietas', 'usia_fase'])['overlap_area'].sum().reset_index()
     agg['overlap_ratio'] = agg['overlap_area'] / agg['cluster_area']
     
-    # Terapkan ambang batas overlap
-    valid_matches = agg[agg['overlap_ratio'] >= min_overlap].copy()
-    valid_matches = valid_matches.sort_values(by=['cluster_id', 'overlap_ratio'], ascending=[True, False])
-    # Ambil irisan terbesar jika sebuah klaster bersinggungan dengan beberapa kelas
-    valid_unique = valid_matches.drop_duplicates(subset=['cluster_id'], keep='first').copy()
+    # 1. Klaster Sawah (ambang batas toleransi petak kecil >= 2% atau 20 m2)
+    sawah_matches = agg[(agg['kelas_sawah'] == 'sawah') & (agg['overlap_ratio'] >= 0.02)].copy()
+    sawah_matches = sawah_matches.sort_values(by=['cluster_id', 'overlap_area'], ascending=[True, False])
+    sawah_unique = sawah_matches.drop_duplicates(subset=['cluster_id'], keep='first').copy()
     
-    print(f"[INFO] Ditemukan {len(valid_unique)} klaster yang lolos ambang batas overlap >= {min_overlap*100:.0f}%:")
+    # 2. Klaster Non-Sawah (ambang batas >= 15%, disampel seimbang dengan jumlah sawah)
+    nonsawah_matches = agg[(agg['kelas_sawah'] == 'non-sawah') & (agg['overlap_ratio'] >= 0.15)].copy()
+    nonsawah_matches = nonsawah_matches.sort_values(by=['cluster_id', 'overlap_area'], ascending=[True, False])
+    nonsawah_unique = nonsawah_matches.drop_duplicates(subset=['cluster_id'], keep='first').copy()
+    
+    # Ambil sampel non-sawah representatif (30 klaster) agar proporsi seimbang dengan sawah (26 klaster)
+    nonsawah_sample = nonsawah_unique.sample(n=min(30, len(nonsawah_unique)), random_state=42)
+    
+    valid_unique = pd.concat([sawah_unique, nonsawah_sample], ignore_index=True)
+    
+    print(f"[INFO] Ditemukan {len(valid_unique)} klaster berlabel seimbang:")
     print(valid_unique[['kelas_sawah', 'varietas']].value_counts())
     
     # Gabungkan ke klaster lengkap

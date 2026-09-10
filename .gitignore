@@ -26,3 +26,4 @@ desktop.ini
 # Logs & Temporary Scratch Files
 *.log
 scratch/
+data/processed/checkpoints/

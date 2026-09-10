@@ -1,0 +1,7 @@
+Metrik,Nilai
+Akurasi CV Tahap 1 (Sawah vs Non-Sawah),82.69%
+Akurasi CV Tahap 2 (Srinuk vs Non-Srinuk),77.27%
+Overall Accuracy Pipeline,94.23%
+Weighted F1-Score,93.95%
+Best Params Tahap 1,"{'k': 3, 'radius': 30}"
+Best Params Tahap 2,"{'k': 5, 'radius': 30}"

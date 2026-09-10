@@ -53,13 +53,14 @@ def load_verified_clusters(geojson_path):
         geom = ee.Geometry(f['geometry'])
         ee_features.append(ee.Feature(geom, {
             'cluster_id': f['properties']['cluster_id'],
+            'kelas_sawah': f['properties'].get('kelas_sawah', 'sawah'),
             'varietas': f['properties']['varietas']
         }))
         
     fc_labeled = ee.FeatureCollection(ee_features)
-    return fc_labeled, labeled_feats
+    return fc_labeled, labeled_feats, ee_features
 
-def extract_cluster_timeseries(fc_labeled, start_date='2017-03-28', end_date='2026-09-08'):
+def extract_cluster_timeseries(fc_labeled, ee_features, start_date='2020-01-01', end_date='2026-05-31'):
     """
     Mengekstrak deret waktu rata-rata EVI dan NDVI untuk setiap klaster
     dari koleksi Sentinel-2 SR Harmonized bebas awan (cs >= 0.60).
@@ -69,7 +70,8 @@ def extract_cluster_timeseries(fc_labeled, start_date='2017-03-28', end_date='20
     
     s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
         .filterBounds(roi) \
-        .filterDate(start_date, end_date)
+        .filterDate(start_date, end_date) \
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 60))
         
     cs = ee.ImageCollection('GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED') \
         .filterBounds(roi) \
@@ -101,26 +103,38 @@ def extract_cluster_timeseries(fc_labeled, start_date='2017-03-28', end_date='20
     total_scenes = filtered.size().getInfo()
     print(f"[INFO] Total citra Sentinel-2 dalam rentang waktu: {total_scenes} scene.")
     
-    # Reduksi wilayah (reduceRegions) rata-rata EVI & NDVI per klaster
-    def reduce_per_scene(img):
-        date = img.get('date')
-        reduced = img.select(['evi', 'ndvi']).reduceRegions(
-            collection=fc_labeled,
-            reducer=ee.Reducer.mean(),
-            scale=10,
-            crs='EPSG:32749'
-        )
-        return reduced.map(lambda f: f.set('date', date))
-        
-    print("[INFO] Mengagregasi rata-rata spektral per klaster (reduceRegions)...")
+    # Reduksi wilayah (reduceRegions) bertahap (batch) untuk menghindari batas 5000 elemen GEE
+    batch_size = 12
+    records = []
+    print(f"[INFO] Mengekstrak rata-rata spektral klaster via reduceRegions bertahap (batch size = {batch_size})...")
     t0 = time.time()
-    all_triplets = filtered.map(reduce_per_scene).flatten().filter(
-        ee.Filter.And(ee.Filter.notNull(['evi']), ee.Filter.notNull(['ndvi']))
-    )
     
-    records = all_triplets.getInfo()['features']
+    for b_idx in range(0, len(ee_features), batch_size):
+        sub_feats = ee_features[b_idx:b_idx + batch_size]
+        sub_fc = ee.FeatureCollection(sub_feats)
+        batch_num = b_idx // batch_size + 1
+        total_batches = (len(ee_features) - 1) // batch_size + 1
+        print(f"   • Memproses Batch {batch_num}/{total_batches} ({len(sub_feats)} klaster)...", flush=True)
+        
+        def reduce_per_scene(img):
+            date = img.get('date')
+            reduced = img.select(['evi', 'ndvi']).reduceRegions(
+                collection=sub_fc,
+                reducer=ee.Reducer.mean(),
+                scale=10,
+                crs='EPSG:32749'
+            )
+            return reduced.map(lambda f: f.set('date', date))
+            
+        sub_triplets = filtered.map(reduce_per_scene).flatten().filter(
+            ee.Filter.And(ee.Filter.notNull(['evi']), ee.Filter.notNull(['ndvi']))
+        )
+        batch_records = sub_triplets.getInfo()['features']
+        records.extend(batch_records)
+        print(f"     -> {len(batch_records)} observasi diterima.", flush=True)
+        
     elapsed = time.time() - t0
-    print(f"[SUKSES] Berhasil mengambil {len(records)} observasi bebas awan dalam {elapsed:.2f} detik.")
+    print(f"[SUKSES] Berhasil mengambil total {len(records)} observasi bebas awan dalam {elapsed:.2f} detik.")
     
     # Format ke Pandas DataFrame
     data_list = []
@@ -128,6 +142,7 @@ def extract_cluster_timeseries(fc_labeled, start_date='2017-03-28', end_date='20
         props = r['properties']
         data_list.append({
             'cluster_id': props['cluster_id'],
+            'kelas_sawah': props.get('kelas_sawah', 'sawah'),
             'varietas': props['varietas'],
             'date': props['date'],
             'evi': props['evi'],
@@ -143,13 +158,13 @@ def clean_and_format_timeseries(df):
     """
     Menerapkan pembersihan deret waktu metodologi Vico Pratama:
     1. Agregasi tanggal ganda (jika ada overlap orbit satelit di hari yang sama)
-    2. Format Matrix Pivot (Baris: cluster_id, Kolom: Tanggal YYYYMMDD)
+    2. Format Matrix Pivot (Baris: cluster_id, kelas_sawah, varietas; Kolom: Tanggal YYYYMMDD)
     3. Interpolasi linear & forward/backward fill untuk menjamin zero-NaN.
     """
     print("[INFO] Melakukan pembersihan data & pivot matrix (format Vico Pratama)...")
     
     # 1. Agregasi mean jika terdapat akuisisi ganda pada tanggal yang sama
-    df_daily = df.groupby(['cluster_id', 'varietas', 'date']).agg({
+    df_daily = df.groupby(['cluster_id', 'kelas_sawah', 'varietas', 'date']).agg({
         'evi': 'mean',
         'ndvi': 'mean'
     }).reset_index()
@@ -169,14 +184,14 @@ def clean_and_format_timeseries(df):
     df_daily['date_col'] = df_daily['date'].dt.strftime('%Y%m%d')
     
     # Matriks EVI
-    evi_pivot = df_daily.pivot(index=['cluster_id', 'varietas'], columns='date_col', values='evi')
+    evi_pivot = df_daily.pivot(index=['cluster_id', 'kelas_sawah', 'varietas'], columns='date_col', values='evi')
     # Interpolasi linear horizontal antar tanggal yang hilang
     evi_pivot_clean = evi_pivot.interpolate(method='linear', axis=1).bfill(axis=1).ffill(axis=1)
     evi_pivot_clean.reset_index().to_csv(OUTPUT_EVI_MATRIX, index=False)
     print(f"[SIMPAN] Matriks EVI Pivot (Vico format) disimpan: '{OUTPUT_EVI_MATRIX}' (Dimensi: {evi_pivot_clean.shape}).")
     
     # Matriks NDVI
-    ndvi_pivot = df_daily.pivot(index=['cluster_id', 'varietas'], columns='date_col', values='ndvi')
+    ndvi_pivot = df_daily.pivot(index=['cluster_id', 'kelas_sawah', 'varietas'], columns='date_col', values='ndvi')
     ndvi_pivot_clean = ndvi_pivot.interpolate(method='linear', axis=1).bfill(axis=1).ffill(axis=1)
     ndvi_pivot_clean.reset_index().to_csv(OUTPUT_NDVI_MATRIX, index=False)
     print(f"[SIMPAN] Matriks NDVI Pivot (Vico format) disimpan: '{OUTPUT_NDVI_MATRIX}' (Dimensi: {ndvi_pivot_clean.shape}).")
@@ -203,8 +218,8 @@ def main():
     print(" [STEP 3] EKSTRAKSI DERET WAKTU EVI & NDVI SENTINEL-2 (DELANGGU)")
     print("=================================================================")
     initialize_gee()
-    fc_labeled, labeled_feats = load_verified_clusters(LABELED_GEOJSON_PATH)
-    df_raw = extract_cluster_timeseries(fc_labeled)
+    fc_labeled, labeled_feats, ee_features = load_verified_clusters(LABELED_GEOJSON_PATH)
+    df_raw = extract_cluster_timeseries(fc_labeled, ee_features)
     clean_and_format_timeseries(df_raw)
 
 if __name__ == '__main__':
