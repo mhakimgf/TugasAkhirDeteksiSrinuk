@@ -56,6 +56,9 @@ PROGRAM/.agents/
 4. **[04_roadmap_sandboxing_program.md](file:///c:/Users/Lenovo/OneDrive%20-%20Universitas%20Katolik%20Parahyangan/Drive%20Kuliah/TUGAS%20AKHIR/PROGRAM/.agents/research_notes/04_roadmap_sandboxing_program.md)**  
    *Ringkasan*: Rencana arsitektur dan langkah eksekusi kode di dalam `PROGRAM/` (terbagi ke folder `data/`, `src/`, `notebooks/`, dan `outputs/`).
 
+5. **[05_katalog_asset_gee_mhakimgf.md](file:///c:/Users/Lenovo/OneDrive%20-%20Universitas%20Katolik%20Parahyangan/Drive%20Kuliah/TUGAS%20AKHIR/PROGRAM/.agents/research_notes/05_katalog_asset_gee_mhakimgf.md)**  
+   *Ringkasan*: Katalog lengkap 26 asset Google Earth Engine resmi pada akun `users/mhakimgf` mencakup poligon ground truth Srinuk (berbagai fase usia), Inpari 32 (Klaten & Salatiga), Membramo, Mapan, polygon_sawah, non_sawah, dan batas GADM 4.1.
+
 ---
 
 ## 4. Indeks Keahlian Khusus (`skills/`)

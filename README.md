@@ -43,7 +43,8 @@ PROGRAM/
 ├── .agents/
 │   └── research_notes/
 │       ├── 01_analisis_mendalam_skripsi_vico.md     # AI Knowledge Base dekonstruksi skripsi Vico
-│       └── 04_roadmap_sandboxing_program.md        # Roadmap penelitian & milestone
+│       ├── 04_roadmap_sandboxing_program.md        # Roadmap penelitian & milestone
+│       └── 05_katalog_asset_gee_mhakimgf.md         # Katalog 26 Asset GEE (users/mhakimgf)
 │
 ├── data/
 │   ├── raw/
@@ -60,6 +61,9 @@ PROGRAM/
 │       ├── cluster_labels_groundtruth.csv          # Metadata label & rasio overlap klaster
 │       ├── timeseries_long_landsat_sentinel.csv    # Format Long deret waktu EVI/NDVI
 │       └── timeseries_evi_matrix_1988_2026.csv     # Matriks Pivot format Vico (bebas NaN)
+│
+├── notebooks/
+│   └── 00_katalog_dan_inspeksi_asset_gee.ipynb     # Notebook interaktif katalog & peta 26 asset GEE
 │
 ├── src/
 │   ├── 01_snic_parameter_optimizer.py              # Grid search & scoring multi-objektif SNIC
