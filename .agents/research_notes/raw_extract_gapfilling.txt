@@ -1,0 +1,892 @@
+--- PAGE 98 ---
+3.3. Eksplorasi Metode Gap-Filling 73
+Hasil pengunduhan data dari CDS dinyatakan dalam format GRIB atau NetCDF 4, yang
+memungkinkan data tersebut diproses menggunakan mesin lokal. Namun, karena platform Google
+Earth Engine telah menjadi basis komputasi geospasial pada penelitian ini, maka diputuskan bahwa
+dataset tersebut diambil melalui platform GEE.
+Selain data ERA5, data CHIRTS ( Climate Hazards Center InfraRed Temperature with Stations )
+juga terdapat pada platform Google Earth Engine , sehingga dapat dimanfaatkan untuk melakukan
+pengunduhan data.
+Kode 3.13: Contoh ekstraksi data cuaca ERA5 dan CHIRTS melalui platform GEE 
+1 // skala
+2 // era5 27: 27000, cakupan waktu : 1979 - 2020
+3 // era5 -Land 11: 11000, cakupan waktu : 1950 - sekarang
+4 // chirts : 5000, cakupan waktu : 1983 - 2016
+5
+6 var era5 = ee.ImageCollection("ECMWF /ERA5 /DAILY ")
+7 var era5_land = ee.ImageCollection("ECMWF /ERA5_LAND /DAILY_AGGR ")
+8 var chirts_daily = ee.ImageCollection("UCSB -CHG /CHIRTS /DAILY ")
+9
+10 var selected_img = era5_land
+11
+12 // sesuaikan scale
+13 var scale =1 1 0 0 0
+14
+15
+16 var filtered_img = selected_img.filterBounds(curr_geom)
+17 .filter(ee.Filter.date(startDate, endDate))
+18
+19 function extract_imageCol(imgCol, aoi, scale){
+20 var ts_data = imgCol.map(function(img){
+21 var date = ee.Date(img.get(’system :time_start ’));
+22 var meanValues = img.reduceRegion({
+23 reducer: ee.Reducer.mean(),
+24 geometry: aoi,
+25 scale: scale,
+26 maxPixels:1 e20
+27 });
+28
+29 return ee.Feature(null, meanValues.set(’date ’, date.format(’YYYYMMdd ’)));
+30 });
+31 return ts_data
+32 }
+33
+34 var ts_data = extract_imageCol(filtered_img, curr_geom, scale);
+35
+36 Export.table.toDrive({
+37 collection: ts_data,
+38 description: ’cuaca_ ’ + curr_kec,
+39 folder: ’earthengine ’,
+40 fileNamePrefix: ’cuaca_ ’ + curr_kec,
+41 fileFormat: ’CSV ’
+42 });
+ 
+Tabel 3.5: Contoh hasil ekstraksi data ERA5 melalui Kode 3.13
+T anggal Titik Embun (K) Evaporasi T anah (min) Curah Hujan (sum) ...
+2020-01-01 293.55 -0.000016 0.000114
+2020-01-02 293.49 -0.000333 0.000158
+2020-01-03 293.49 -0.000468 0.000034 ...
+2020-01-04 293.63 -0.000321 0.000166
+2020-01-05 293.50 -0.000229 0.000285
+... ... ... ...
+3.3 Eksplorasi Metode Gap-Filling
+Eksplorasi dilakukan dengan menjalankan langkah pada sumber yang telah dipelajari pada Bagi-
+an 2.4.3. Berikut adalah langkahnya:
+1. Memberi label pada piksel-piksel yang tertutup awan.
+2. Menambahkan indeks untuk mengidentiﬁkasi vegetasi, seperti NDVI dan lainnya.
+--- PAGE 99 ---
+74 Bab 3. Eksplorasi Teknologi
+3. Melakukan resampling data satelit Landsat-8 agar memiliki resolusi spasial yang sesuai dengan
+Sentinel-2 dengan metode interpolasi.
+4. Melakukan penggabungan data citra Landsat-8 dan Sentinel-2 dalam satu koleksi dengan
+tetap menyimpan informasi tanggal dari setiap citra.
+5. Melakukan pencarian nilai maksimum NDVI berdasarkan piksel berawan, pada rentang waktu
+tertentu.
+Pada eksplorasi, ditemukan bahwa dataset Landsat 5 dan 7 dapat memberikan data citra untuk
+waktu yang lebih lama, sehingga kedua dataset tersebut diekstrak untuk kebutuhan penelitian.
+3.3.1 Implementasi Cloud-Masking
+Berikut merupakan eksplorasi yang dilakukan pada platform Google Earth Engine pada data Landsat
+5, 7, dan 8, dan Sentinel-2. Landsat 5 dan 7 digunakan karena mencakup tanggal yang lebih luas,
+pada 1983 hingga 2012 (Landsat-5) dan 1999 hingga sekarang (Landsat-7 yang datanya diakses per
+bulan April 2025). Pada Kode 3.14, dilakukan masking pada piksel yang tertutup awan dengan
+memanfaatkan band QA.
+Kode 3.14: Pelabelan data berawan untuk satelit Landsat 
+1 var l8_col = ee.ImageCollection("LANDSAT /LC08 /C02 /T1_L2 ") // aset landsat 8 (2013 - sekarang )
+2 var l7_col = ee.ImageCollection("LANDSAT /LE07 /C02 /T1_L2 ") // aset landsat 7 (1999 - sekarang )
+3 var l5_col = ee.ImageCollection("LANDSAT /LT05 /C02 /T1_L2 ") // aset landsat 5 (1983 - 2012)
+4
+5 function maskLandsatClouds(image){
+6 var qa = image.select(’QA_PIXEL ’); // memilih band QA
+7 var cloudBitMask =1< <6 // membuat binary 1000000
+8 var mask = qa.bitwiseAnd(cloudBitMask).eq(cloudBitMask); // melakukan masking , untuk mencari mengecek apakah pada bit ke -6 pada
+piksel bernilai 1 (artinya clear , tidak ada cloud atau cloudshadow )
+9
+10 // fungsi updateMask , di mana objek ee .Image dapat mempunyai layer mask untuk menandai piksel -piksel yang dimask
+11 return image.updateMask(mask)
+12 .select(’SR_B .* ’)
+13 .copyProperties(image,[ ’system :time_start ’]);
+14 }
+15
+16 // fungsi applyScaleFactors dibuat , karena pada satelit landsat data yang disimpan discale dari double menjadi integer untuk
+efisiensi penyimpanan . Sehingga , jika ingin melakukan pengolahan , data tersebut harus discale kembali ke nilai asal
+17
+18 function applyScaleFactors(image){
+19 var opticalBands = image.select(’SR_B .’).multiply(0.0000275).add(-0.2);
+20 var thermalBands = image.select(’ST_B .* ’).multiply(0.00341802).add(149.0);
+21 return image.addBands(opticalBands, null, true)
+22 .addBands(thermalBands, null, true);
+23 }
+24
+25 // memfilter data berdasarkan wilayah padi_2 dan rentang tanggal dan mengapply fungsi scaleFactors
+26 var filtered_l8 = l8_col.filter(ee.Filter.date(date_to_observe, end_date))
+27 .filter(ee.Filter.bounds(padi_2))
+28 .map(applyScaleFactors)
+29 var filtered_l7 = l7_col.filter(ee.Filter.date(date_to_observe, end_date))
+30 .filter(ee.Filter.bounds(padi_2))
+31 .map(applyScaleFactors)
+32 var filtered_l5 = l5_col.filter(ee.Filter.date(date_to_observe, end_date))
+33 .filter(ee.Filter.bounds(padi_2))
+34 .map(applyScaleFactors)
+35
+36 // mengapply fungsi masking
+37 var masked_l8 = filtered_l8.map(maskLandsatClouds)
+38 var masked_l7 = filtered_l7.map(maskLandsatClouds)
+39 var masked_l5 = filtered_l5.map(maskLandsatClouds)
+ 
+Untuk dataset Sentinel-2, masking untuk data yang tertutup awan adalah dengan memanfaatkan
+band QA atau dataset Cloud Score+ yang memuat pelabelan awan pada dataset tersebut. Namun,
+pada band QA milik Sentinel-2, data dari tahun 2022-01-25 hingga 2024-02-28 tidak ada atau null.
+Implementasi cloud masking pada dataset tersebut terdapat pada Kode 3.15.
+Kode 3.15: Pelabelan data berawan untuk satelit Sentinel 
+1 // fungsi untuk masking dengan band QA60
+2 function maskS2clouds(image){
+3 // Mengambil band QA60
+4 var qa = image.select(’QA60 ’);
+5
+6 // Bit ke -10 dan 11 adalah cloud dan cirrus
+7 var cloudBitMask =1< <1 0 ;
+8 var cirrusBitMask =1< <1 1 ;
+9
+10 // Membuat mask dengan kedua bit 10 dan 11 yang bernilai 0, yang artinya tidak berawan
+11 var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+--- PAGE 100 ---
+3.3. Eksplorasi Metode Gap-Filling 75
+12 .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+13
+14 return image.updateMask(mask)
+15 .select(’B.* ’)
+16 .copyProperties(image,[ ’system :time_start ’]);
+17 }
+18
+19 // Mengekstrak aset dataset Cloud_Score +
+20 var csPlus = ee.ImageCollection("GOOGLE /CLOUD_SCORE_PLUS /V1 /S2_HARMONIZED ")
+21 var csPlusBands = csPlus.first().bandNames();
+22
+23 // Fungsi untuk menghubungkan image dengan image lain pada band tertentu . Penghubungan dua image dilakukan berdasarkan system :
+index yang cocok
+24 var linkWithCs = function(image){
+25 var linked = image.linkCollection(csPlus, csPlusBands)
+26 return linked
+27 }
+28
+29 // Mask cloud dengan nilai band QA dari Cloud_Score +
+30 function maskLowQA(image){
+31 var qaBand = ’cs ’; // Nama band pada Cloud_Score + yang menghitung skor berawan , dengan rentang nilai 0 hingga 1 di mana 0
+semakin berawan dan 1 tidak berawan
+32 var clearThreshold =0 . 3 ;
+33 var mask = image.select(qaBand).gte(clearThreshold); // Function gte adalah untuk mengambil piksel -piksel yang nilai QA nya
+lebih tinggi dari threshold (lebih clear )
+34 return image.updateMask(mask);
+35 }
+36
+37 // Menyesuaikan id pada sentinel dengan tanggalnya agar seragam , karena nantinya akan digabungkan dengan landsat
+38 var change_id_s2 = function(image){
+39 var index = ee.String(image.get("system :index "))
+40 var date = index.slice(0, 8)
+41 return image.set(’system :id ’, date);
+42 }
+43
+44 var filtered_s2 = sentinel_col.filter(ee.Filter.date(date_to_observe, end_date))
+45 .filter(ee.Filter.bounds(padi_2))
+46
+47 // Melakukan link pada Cloud_Score
+48 var linked_s2 = filtered_s2.map(linkWithCs)
+49
+50 // Menerapkan masking
+51 var masked_s2 = linked_s2.map(maskLowQA)
+ 
+3.3.2 Penambahan indeks vegetasi NDVI dan EVI
+Untuk dapat melihat pertumbuhan tanaman, ditambahkan indeks NDVI dan EVI yang memetakan
+tingkat kehijauan tanaman pada nilai dengan rentang 0 hingga 1. Implementasi penambahan NDVI
+dan EVI dilakukan terhadap dataset-dataset yang telah di- mask.
+Kode 3.16: Penambahan band NDVI dan EVI pada dataset Landsat dan Sentinel 
+1 // -------------------Sentinel -2-------------------
+2 var s2_ndvi = masked_s2.map(function(image){
+3 // Mengimplementasikan rumus NDVI dengan fungsi yang telah ada pada platform GEE
+4 var ndvi = image.normalizedDifference(["B8 ", "B4 "]).rename("ndvi ")
+5
+6 var nir = image.select("B8 ").divide(10000); // scale factor pada sentinel -2.
+7 var red = image.select("B4 ").divide(10000);
+8 var blue = image.select("B2 ").divide(10000);
+9
+10 // Mengimplementasikan rumus EVI berdasarkan rumus yang dipelajari pada landasan teori
+11 var evi = nir.subtract(red)
+12 .multiply(2.5)
+13 .divide(nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1))
+14 .rename("evi ");
+15
+16 // Mengembalikan hanya image dengan NDVI dan EVInya saja
+17 return ee.Image([ndvi, evi])
+18 .copyProperties(image,[ "system :time_start "]);
+19 }).map(change_id_s2); // Mengaplikasikan penggantian ID
+20
+21
+22 // -------------------Landsat 5, 7, dan 8-------------------
+23 // Landsat mempunyai nama band yang konsisten antar satelitnya , sehingga hanya diimplementasikan satu fungsi ekstraksi NDVI dan
+EVI
+24 function extract_ndvi_evi_landsat(image){
+25 var ndvi = image.normalizedDifference([’SR_B4 ’, ’SR_B3 ’]).rename("ndvi ")
+26
+27 var nir = image.select(’SR_B4 ’);
+28 var red = image.select(’SR_B3 ’);
+29 var blue = image.select(’SR_B1 ’);
+30
+31 var evi = nir.subtract(red)
+32 .multiply(2.5)
+33 .divide(nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1))
+34 .rename("evi ");
+35
+36 return ee.Image([ndvi, evi])
+37 .copyProperties(image,[ "system :time_start ", "system :index "]);
+38 }
+39
+--- PAGE 101 ---
+76 Bab 3. Eksplorasi Teknologi
+40 // mengubah ID pada dataset dengan tanggalnya , agar semua seragam
+41 var change_id_landsat = function(image){
+42 var id = ee.String(image.get(’system :index ’));
+43 var date = id.split(’_’).get(2);
+44 return image.set(’system :id ’, date);
+45 };
+46
+47 var ndvi_l5 = masked_l5
+48 .map(extract_ndvi_evi_landsat)
+49 .map(change_id_landsat)
+50
+51 var ndvi_l7 = masked_l7
+52 .map(extract_ndvi_evi_landsat)
+53 .map(change_id_landsat)
+54
+55 var ndvi_l8 = masked_l8
+56 .map(extract_ndvi_evi_landsat)
+57 .map(change_id_landsat)
+ 
+3.3.3 Resampling Pada Dataset Landsat
+Kemudian, untuk menyetarakan resolusi spasial antara dataset Landsat dan Sentinel-2, dilakukan
+resampling dengan metode interpolasi bicubic pada dataset Landsat.
+Kode 3.17: Metode resampling pada satelit Landsat 
+1 // Fungsi untuk melakukan resample dengan interpolasi bicubic pada image
+2 var resampleBicubic = function(image){
+3 var resampled = image.resample(’bicubic ’) // Mengeset metode resampling
+4 .reproject({
+5 crs: image.select(["ndvi ", "evi "]).projection().crs(), // Tidak mengubah projeksi
+6 scale:1 0 // Resolusi spasial baru yang diinginkan
+7 });
+8 return resampled
+9 }
+10
+11 final_l5 = ndvi_l5.map(resampleBicubic)
+12 final_l7 = ndvi_l7.map(resampleBicubic)
+13 final_l8 = ndvi_l8.map(resampleBicubic)
+ 
+3.3.4 Penggabungan Data Citra Landsat dan Implementasi Metode Gap-Filling
+Dataset Landsat dan Sentinel yang telah diproses kemudian digabungkan. Untuk menemukan
+gambar-gambar pada rentang 16 hari relatif dari gambar tertentu, digunakan metode joining
+menggunakan ee.Join Hasil koleksi gambar yang sesuai dengan kondisi pada saat joining, akan
+disimpan pada properti yang bernama before dan after, di mana properti before menangkap seluruh
+gambar yang ada sebelum suatu gambar dalam rentang 8 hari, dan after menangkap seluruh
+gambar yang ada setelah gambar tersebut pada rentang 8 hari. Implementasi joining terdapat pada
+Kode 3.18.
+Kode 3.18: Pencarian image untuk rentang 16 hari 
+1 // Penggabungan dataset Sentinel -2, Landsat 5, 7, dan 8 menjadi satu ee .ImageCollection
+2 var sl_col = s2_ndvi.merge(final_l8).merge(final_l5).merge(final_l7)
+3
+4 // Menggunakan filter dan join untuk mengambil image pada rentang 16 hari , yaitu 8 hari ke belakang dan 8 hari ke depan .
+5 var days =8 ; // Rentang yang ingin dicek dalam hari
+6 var millis = ee.Number(days).multiply(24*60*60*1000) // Ubah format rentang menjadi millisecond , karena penyimpanan waktu pada
+image adalah dalam satuan millisecond
+7
+8 // Membuat filter untuk join , di mana perbedaan maksimum waktunya adalah pada rentang days
+9 var maxDiffFilter = ee.Filter.maxDifference({
+10 difference: millis,
+11 leftField: ’system :time_start ’,
+12 rightField: ’system :time_start ’
+13 })
+14
+15 // Membuat filter yang digunakan untuk join , di mana leftField <= rightField , pada properti "system :time_start "
+16 var lessEqFilter = ee.Filter.lessThanOrEquals({
+17 leftField: ’system :time_start ’,
+18 rightField: ’system :time_start ’
+19 })
+20
+21 // Membuat filter untuk leftField >= rightField
+22 var greaterEqFilter = ee.Filter.greaterThanOrEquals({
+23 leftField: ’system :time_start ’,
+24 rightField: ’system :time_start ’
+25 })
+26
+27 // Menggabungkan dua filter , sehingga kedua kondisi yang digabungkan harus dipenuhi
+28 var filter1 = ee.Filter.and(maxDiffFilter, lessEqFilter)
+29 var filter2 = ee.Filter.and(maxDiffFilter, greaterEqFilter)
+--- PAGE 102 ---
+3.3. Eksplorasi Metode Gap-Filling 77
+30
+31 // Membuat join yang menyimpan hasilnya pada properti ’after ’
+32 var join1 = ee.Join.saveAll({
+33 matchesKey: ’after ’
+34 })
+35
+36 // Mencari gambar -gambar pada collection yang sama
+37 var join1Result = join1.apply({
+38 primary: sl_col,
+39 secondary: sl_col,
+40 condition: filter1
+41 })
+42
+43 // Membuat join yang menyimpan hasil pada properti ’before ’
+44 var join2 = ee.Join.saveAll({
+45 matchesKey: ’before ’
+46 })
+47
+48 var join2Result = join2.apply({
+49 primary: join1Result,
+50 secondary: join1Result,
+51 condition: filter2
+52 })
+53
+54 // Mengamplikasikan join pada collection join1Result
+55 var joinedCol = join2Result;
+ 
+Setelah gambar-gambar yang relevan disimpan, dilakukan metode gap-ﬁlling dengan melakuk-
+an pengambilan nilai maksimum dalam rentang 16 hari pada setiap piksel yang tertutup awan.
+Implementasi hal tersebut terdapat pada Kode 3.19
+Kode 3.19: Implementasi gap-ﬁlling berdasarkan nilai maksimum NDVI 
+1 var best16Days = function(image){
+2 var image = ee.Image(image);
+3
+4 // Mengambil gambar dalam rentang 16 hari , hasil dari joining
+5 var beforeImages = ee.List(image.get(’before ’))
+6 var afterImages = ee.List(image.get(’after ’))
+7
+8 // Mengambil semua Image
+9 var allImages = beforeImages.cat(afterImages)
+10
+11 // Mengambil nilai maksimum pada rentang 16 hari
+12 var maxValueImage = ee.ImageCollection.fromImages(allImages).max()
+13
+14 // Ganti hanya piksel yang dimask pada setiap imagenya
+15 var filledImage = image.unmask(maxValueImage);
+16
+17 return filledImage.copyProperties(image,[ ’system :time_start ’, ’system :id ’])
+18 }
+19
+20 // Mengaplikasikan gap -filling
+21 var sl_merge = ee.ImageCollection(joinedCol.map(best_16_days));
+ 
+3.3.5 Pengumpulan Data Wilayah
+Data citra yang telah diproses kemudian akan digunakan untuk melihat pertumbuhan padi panda-
+nwangi pada masing-masing wilayah kecamatannya. Adapun tujuh kecamatan yang menjadi fokus
+observasi adalah: Kecamatan Warungkondang, Gekbrong, Cugenang, Cianjur, Campaka, Cilaku,
+dan Cibeber, di Kabupaten Cianjur. Namun, untuk melakukan observasi data citra pada kecamatan
+tersebut, dibutuhkan batas-batas wilayah secara geograﬁs. Salah satu sumber yang menyediakan
+perbatasan wilayah pada level kecamatan di Indonesia adalah GADM ( Global Administrative Area
+Database), yang dapat diakses melalui gadm.org (Lihat Gambar 3.7). Hasil dari pengunduhan data
+tersebut adalah shapeﬁle yang dapat langsung diunggah ke dalam Google Earth Engine .
+Shapeﬁle yang sudah dipilih (level kecamatan) kemudian diunggah ke Google Earth Engine melalui
+bagian asset. Hal tersebut dilakukan agar batas-batas wilayah tersebut dapat digunakan dalam
+pemrosesan GEE (Lihat Gambar 3.8). Kemudian, aset tersebut diﬁlter berdasarkan Kabupaten
+Cianjur, dan tujuh kecamatan yang ditanami pandanwangi. Implementasi ﬁlter pada asset terdapat
+pada Kode 3.20, dan hasilnya ditampilkan pada (Gambar 3.9). Selanjutnya, asset yang telah diﬁlter
+berdasarkan kecamatan akan diimpor kembali menjadi sebuah asset baru untuk memudahkan
+pengaksesan. Nantinya, area of interest pada observasi dapat ditetapkan sesuai dengan perbatasan
+kecamatan yang ada.
+Kode 3.20: Implementasi ﬁlter pada asset yang relevan
+--- PAGE 103 ---
+78 Bab 3. Eksplorasi Teknologi
+Gambar 3.7: Tampilan portal data pengunduhan batas wilayah administrasi GADM.
+Gambar 3.8: Petunjuk ﬁtur asset dalam Google Earth Engine
+ 
+1 // Mengimport asset yang telah diupload
+2 gadm_level3 = ee.FeatureCollection("projects /vics -testing -gee /assets /gadm_3_idn ");
+3
+4 // Menuliskan seluruh nama kecamatan yang dibutuhkan
+5 var list_kecamatan =[ ’Warungkondang ’, ’Gekbrong ’, ’Cugenang ’, ’Cianjur ’, ’Campaka ’, ’Cilaku ’, ’Cibeber ’]
+6
+7 // Melakukan filter pada property "NAME_2 " (Kabupaten ) dan "NAME_3 " (Kecamatan )
+8 var lokasi_pandanwangi = gadm_level3.filter(ee.Filter.eq("NAME_2 ", "Cianjur ")).filter(ee.Filter.inList("NAME_3 ",
+list_kecamatan))
+9
+10 // Export menjadi sebuah asset baru yang diberi nama kecamatan_cianjur
+11 Export.table.toAsset({
+12 collection: lokasi_pandanwangi,
+13 description: ’Export_Polygon_To_Assets ’,
+14 assetId: ’users /vicsprat /kecamatan_cianjur ’,
+15 });
+ 
+Sebelum melakukan visualisasi pada hasil metode gap ﬁlling , citra asli dari setiap kecamatan
+divisualisasikan terlebih dahulu. Hal tersebut dilakukan guna memahami konteks dasar citra dari
+setiap kecamatan, sehingga dapat melakukan evaluasi kualitatif pada hasil gap ﬁlling nya. Visualisasi
+yang diambil berasal dari citra satelit Sentinel-2, di mana pada setiap kecamatannya, citra diambil
+pada waktu tertentu yang berkondisi minim awan. Metode gap ﬁlling dengan nilai maksimum
+tersebut berbasis pada indeks vegetasi NDVI, sehingga pada saat visualisasi digunakan band NDVI.
+--- PAGE 104 ---
+3.3. Eksplorasi Metode Gap-Filling 79
+Gambar 3.9: Hasil ﬁltering data Multipolygon GADM Tingkat tiga, pada tujuh kecamatan
+(a) Warungkondang
+ (b) Gekbrong
+ (c) Cugenang
+(d) Cianjur
+ (e) Cilaku
+ (f) Cibeber
+(g) Campaka
+Gambar 3.10: Visualisasi komposit/kombinasi band Red, Green, Blue pada setiap kecamatan yang
+ditanami padi pandanwangi
+--- PAGE 105 ---
+80 Bab 3. Eksplorasi Teknologi
+3.3.6 Evaluasi Kualitatif Gap-Filling
+Pada koleksi citra Sentinel-2 pada Kecamatan Warungkondang sepanjang tahun 2022, dilakukan
+evaluasi data secara kualitatif, yaitu dengan melihat visualisasi setiap citra dari wilayah tersebut
+(dengan mata manusia), dan ditemukan bahwa 47 dari 72 citra, atau 65.3% citra tertutup awan.
+Untuk menilai hasil gap-ﬁlling secara kualitatif, dilakukan visualisasi citra NDVI pada salah satu
+kecamatan, yaitu Warungkondang, seperti pada Gambar 3.11. Untuk melihat gambaran secara
+umum, visualisasi gap ﬁlling dilakukan pada beberapa data, yaitu:
+• Citra yang tertutup awan secara penuh,
+• Citra yang tertutup awan sebagian, dan
+• Citra yang tidak tertutup awan.
+(a) Komposit RGB Warungkondang
+ (b) Visualisasi NDVI Warungkondang
+Gambar 3.11: Contoh visualisasi NDVI pada citra Kecamatan Warungkondang yang diambil pada
+10-03-2020. Rentang nilai NDVI dari setiap piksel berkisar dari ↑1 hingga 1, di mana warna putih
+mengindikasikan nilai piksel yang mendekati ↑1 dan warna hijau mengindikasikan nilai piksel yang
+mendekati 1.
+Untuk memudahkan evaluasi, dilakukan visualisasi pada satu kecamatan terlebih dahulu yaitu
+W arungkondang. Berdasarkan metode gap ﬁlling dengan nilai maksimum yang diimplementasikan
+pada Kode 3.19, terlihat bahwa metode tersebut berhasil memberikan informasi untuk piksel-piksel
+yang tertutup awan meskipun belum secara keseluruhan (Lihat Gambar 3.12). Pada kondisi tidak
+berawan, citra tidak berubah karena gap ﬁlling hanya dilakukan pada piksel yang terlabel berawan.
+Namun, masih terdapat beberapa potensi pengembangan terhadap metode tersebut, yaitu:
+• Pada kondisi yang tertutup awan, dapat terlihat bahwa piksel dengan kondisi yang terkon-
+taminasi awan tidak ter- mask (Lihat Gambar 3.13). Hal tersebut mungkin dapat terjadi
+karena metode masking yang kurang tepat pada citra Sentinel-2 dan Landsat. Oleh karena
+itu, penyesuaian terhadap metode masking dapat dilakukan, seperti menaikkan nilai threshold
+pada masking Sentinel-2, dan pada Landsat, dengan memanfaatkan nilai lain pada band QA
+untuk pertimbangan masking.
+• Jika melihat Gambar 3.14, terdapat perbedaan yang cukup signiﬁkan pada data time series
+yang belum di- gap-ﬁll dengan yang sudah di- gap-ﬁll. Namun, jika dilihat secara lebih seksama,
+masih terdapat noise yang menyebabkan kenaikan atau penurunan yang ekstrim pada data
+time series . Hal tersebut mungkin terjadi jika masih ada beberapa noise (data berawan) pada
+data, sehingga mengganggu nilai representatif yang diambil pada setiap gambarnya. Oleh
+karena itu, akan dilihat terlebih dahulu perbedaan time series setelah dilakukan penyesuaian
+pada metode masking.
+--- PAGE 106 ---
+3.3. Eksplorasi Metode Gap-Filling 81
+Sebelum Gap Filled
+(a) Kondisi tertutup
+awan (19-04-2020)
+(b) Kondisi sebagian
+berawan (10-03-2020)
+(c) Kondisi tidak
+berawan (14-05-2020)
+Setelah Gap Filled
+(d) Kondisi tertutup
+awan (19-04-2020)
+(e) Kondisi sebagian
+berawan (10-03-2020)
+(f) Kondisi tidak
+berawan (14-05-2020)
+Gambar 3.12: Visualisasi perbandingan sebelum dan sesudah gap ﬁlling di Warungkondang
+(a) Visualisasi RGB
+ (b) Hasil Masking
+Gambar 3.13: Visualisasi masking pada citra yang tertutup awan (19-04-2020), di mana pada
+Gambar 3.13b, warna hitam bermakna piksel yang berawan dan warna putih bermakna sebaliknya.
+JanFebMarAprMayJunJulAugSepOctNovDec
+↑0.2
+0
+0.2
+0.4
+0.6
+0.8
+1
+Nilai Indeks
+EVINDVI
+(a) Sebelum Gap Filling
+JanFebMarAprMayJunJulAugSepOctNovDec
+↑0.2
+0
+0.2
+0.4
+0.6
+0.8
+1
+Nilai Indeks
+EVINDVI
+(b) Sesudah Gap Filled
+Gambar 3.14: Time Series dari rata-rata Indeks EVI and NDVI pada area Kampung Pandanwangi
+sepanjang 2020, sebelum dan setelah dilakukan gap ﬁlling .
+--- PAGE 107 ---
+82 Bab 3. Eksplorasi Teknologi
+3.3.7 Gap-Filling Setelah Dilakukan Penyesuaian Metode Masking
+. Pada tahap sebelumnya, seperti pada Kode 3.15, nilai dari variabel clearThreshold adalah
+0.3 dan menghasilkan masking yang kurang baik. Sehingga akan dicoba iterasi untuk melakukan
+penambahan terhadap nilai tersebut sebanyak 0.1, hingga seluruh area yang terkontaminasi awan
+pada Gambar 3.13 berhasil di- mask. Implementasi penyesuaian tersebut terdapat pada Kode 3.21.
+Kode 3.21: Penyesuaian Threshold Untuk Masking Awan Sentinel-2 
+1 // ...
+2 function maskLowQA(image){
+3 var qaBand = ’cs ’;
+4 var clearThreshold =0 . 5 ; // Ubah pada bagian ini dengan nilai yang disesuaikan
+5 var mask = image.select(qaBand).gte(clearThreshold);
+6 return image.updateMask(mask);
+7 }
+8 // ...
+ 
+• Iterasi 1, clearThreshold = 0.4
+(a) Komposit RGB
+ (b) Hasil masking
+Gambar 3.15: Hasil masking dengan nilai clearThreshold = 0.4 . Dapat terlihat bahwa terdapat
+peningkatan pada hasil masking dibandingkan sebelumnya.
+• Iterasi 2, clearThreshold = 0.5
+(a) Komposit RGB
+ (b) Hasil masking
+Gambar 3.16: Hasil masking dengan nilai clearThreshold = 0.5 . Pada citra tersebut, seluruh
+piksel yang terkontaminasi awan berhasil ter- mask.
+Beberapa hasil masking pada citra yang lain dengan parameter clearThreshold = 0.5 ,u n t u k
+melihat konsistensi nilai parameter tersebut pada kondisi yang berbeda. Jika terdapat kasus
+yang menunjukkan bahwa dibutuhkan nilai threshold yang lebih tinggi, iterasi selanjutnya
+akan dilakukan.
+--- PAGE 108 ---
+3.3. Eksplorasi Metode Gap-Filling 83
+(a) Komposit RGB
+ (b) Hasil masking
+Gambar 3.17: Hasil masking pada citra Sentinel-2 di tanggal 28-06-2020 dengan nilai
+clearThreshold = 0.5 . Pada gambar tersebut, terlihat bahwa piksel yang masih terkontami-
+nasi awan belum berhasil seluruhnya ter- mask.
+• Iterasi 3, clearThreshold = 0.6
+(a) Komposit RGB
+ (b) Hasil masking
+Gambar 3.18: Hasil masking pada citra Sentinel-2 di tanggal 28-06-2020 dengan nilai
+clearThreshold = 0.6 . Pada gambar tersebut, seluruh piksel yang terkontaminasi awan ber-
+hasil ter- mask.
+(a) Komposit RGB
+ (b) Hasil masking
+Gambar 3.19: Hasil masking pada citra Sentinel-2 di tanggal 01-06-2020 dengan nilai
+clearThreshold = 0.6 . Dengan nilai threshold tersebut, dapat terlihat juga piksel yang ter-
+pengaruh oleh bayangan awan ( cloud shadow ) juga ter- mask.
+Dengan hasil iterasi yang dilakukan berdasarkan evaluasi kualitatif, ditetapkan nilai clearThreshold
+= 0.6 menjadi yang digunakan untuk masking pada dataset Sentinel-2. Hasil graﬁk setelah dilaku-
+kannya perbaikan pada metode masking Sentinel-2 terdapat pada Gambar 3.20.
+--- PAGE 109 ---
+84 Bab 3. Eksplorasi Teknologi
+JanFebMarAprMayJunJulAugSepOctNovDec
+↑0.2
+0
+0.2
+0.4
+0.6
+0.8
+1
+Nilai Indeks
+EVINDVI
+Gambar 3.20: Time series dari rata-rata indeks EVI and NDVI pada area Kampung Pandanwangi
+sepanjang 2020, setelah penyesuaian pada metode masking Sentinel-2
+Setelah menyesuaikan metode masking pada Sentinel-2, data time series menjadi lebih halus,
+seperti yang terlihat pada Gambar 3.20. Untuk melihat hasilnya secara lebih jauh, divisualisasikan
+graﬁk time series pada rentang yang lebih luas, misalnya lima tahun.
+2020 2021 2022 2023 2024
+0
+0.2
+0.4
+0.6
+0.8
+1
+Tahun
+Nilai Indeks
+EVI
+NDVI
+Gambar 3.21: Time series dari rata-rata indeks EVI dan NDVI pada area Kampung Pandanwangi
+dari tahun 2020 hingga 2024. Secara keseluruhan, masih terdapat sedikit noise, yang mungkin dapat
+direduksi dengan penyesuaian masking pada Landsat atau dengan metode smoothing.
+Untuk eksplorasi, dilakukan penyesuaian juga pada masking citra Landsat, di mana bit-bit lain
+yang masih relevan dapat digunakan untuk menghilangkan kontaminasi awan (lihat kembali band
+QA pada Landsat dalam Tabel 2.18). Implementasi penyesuaian tersebut terdapat pada Kode 3.22
+dan hasilnya ditampilkan pada Gambar 3.22. Terlihat pada metode masking yang terbaru, piksel
+yang terkontaminasi awan lebih banyak ter- mask. Untuk visualisasi time series hasil gap ﬁlling
+secara ﬁnal terdapat pada Gambar 3.23.
+Kode 3.22: Penyesuaian Band QA Untuk Masking Awan Landsat 
+1 // ...
+2 // Fungsi yang telah ada sebelumnya
+3 function maskLandsatClouds(image){
+4 var qa = image.select(’QA_PIXEL ’);
+5 var cloudBitMask =1< <6 ; // Membuat binary 1000000 untuk melakukan masking berdasarkan bit ke -6 saja (clear atau tidak )
+6 var mask = qa.bitwiseAnd(cloudBitMask).eq(cloudBitMask);
+7
+8 return image.updateMask(mask)
+9 .select(’SR_B .* ’)
+10 .copyProperties(image,[ ’system :time_start ’]);
+11 }
+12
+13 // Fungsi yang baru
+14 function maskLandsatClouds(image){
+15 var qa = image.select(’QA_PIXEL ’);
+16 /* Mengonstruksi cloudBits yang ideal untuk piksel tidak berawan berdasarkan band QA
+17 Bit 0 (Fill ): nilai ideal 0
+18 Bit 1 (Dilated Cloud ): nilai ideal 0
+19 Bit 2 (Unused ): nilai ideal 0
+20 Bit 3 (Cloud ): nilai ideal 0
+21 Bit 4 (Cloud Shadow ): nilai ideal 0
+22 Bit 5 (Snow ): tidak dapat digunakan untuk mempertimbangkan awan
+--- PAGE 110 ---
+3.3. Eksplorasi Metode Gap-Filling 85
+23 Bit 6 (Clear ): sudah dicakup pada bit ke -1 dan 3
+24 0: Cloud or Dilated Cloud bits are set
+25 1: Cloud and Dilated Cloud bits are not set
+26 Bit 7 (Water ): tidak dapat digunakan untuk mempertimbangkan awan
+27 Bits 8-9 (Cloud Confidence ): nilai ideal <= 1
+28 0: None
+29 1: Low
+30 2: Medium
+31 3: High
+32 Bits 10 -11 (Cloud Shadow Confidence ): nilai ideal <= 1
+33 0: None
+34 1: Low
+35 2: Medium
+36 3: High
+37 Bits 12 -13 (Snow /Ice Confidence ): tidak digunakan
+38 0: None
+39 1: Low
+40 2: Medium
+41 3: High
+42 Bits 14 -15 (Cirrus Confidence ): nilai ideal <= 1
+43 0: None
+44 1: Low
+45 2: Medium
+46 3: High
+47
+48 Jadi , yang digunakan untuk menilai piksel ideal adalah bit 0-4 dan 8-15
+49 */
+50 var cloudBits = parseInt(’11111 ’,2 )
+51 var maskCloud = qa.bitwiseAnd(cloudBits).eq(0); // Mengecek apakah nilai pada bit 0-4 semua bernilai 0.
+52 var cloudConf = qa.rightShift(8).bitwiseAnd(3);
+53 var cloudShadowConf = qa.rightShift(10).bitwiseAnd(3);
+54 var cirrusConf = qa.rightShift(14).bitwiseAnd(3);
+55 var lowCloudConf = cloudConf.lt(2) // Mengecek apakah cloudConfidence low atau none
+56 var lowCloudShadowConf = cloudShadowConf.lt(2) // Mengecek apakah cloudShadowConfidence low atau none
+57 var lowCirrus = cirrusConf.lt(2) // Mengecek apakah cirrusConfidence low atau none
+58
+59 var allConditions = maskCloud.and(lowCloudConf).and(lowCloudShadowConf).and(lowCirrus)
+60 return image.updateMask(allConditions)
+61 .select(’SR_B .* ’)
+62 .copyProperties(image,[ ’system :time_start ’,"system :index "]);
+63 }
+64 // ...
+ 
+(a) Visualisasi RGB
+ (b) Hasil Masking Awal
+ (c) Hasil Masking Terbaru
+Gambar 3.22: Visualisasi masking pada citra Landsat-8 pada 11-07-2020 yang menunjukkan
+perbedaan pada hasil masking dengan metode yang berbeda berdasarkan Kode 3.22.
+2020 2021 2022 2023 2024
+0
+0.2
+0.4
+0.6
+0.8
+1
+Tahun
+Nilai Indeks
+EVI
+NDVI
+Gambar 3.23: Time series dari rata-rata indeks EVI dan NDVI pada area Kampung Pandanwangi
+dari tahun 2020 hingga 2024, di mana metode masking pada Sentinel-2 dan Landsat telah disesuaikan.
+--- PAGE 111 ---
+86 Bab 3. Eksplorasi Teknologi
+Pada Gambar 3.23, dapat terlihat bahwa indeks vegetasi EVI lebih tahan terhadap nilai-nilai
+ekstrim dibandingkan dengan NDVI. Hal tersebut selaras dengan pertumbuhan tanaman padi
+yang bersifat perlahan, sehingga nilai-nilai ekstrim tersebut kemungkinan besar disebabkan oleh
+kontaminasi awan.
+3.4 Eksplorasi Metode Clustering
+Pada platform Google Earth Engine, terdapat tools untuk mengimplementasikan algoritma clustering,
+yaitu pada objek ee.Algorithms.Image.Segmentation. Objek tersebut mempunyai beberapa
+fungsi untuk clustering,s e p e r t i.GMeans(), .KMeans(), .SNIC(), dan .seedGrid(). Namun, pada
+studi literatur, dipelajari hanya dua jenis algoritma, yaitu K-Means dan SNIC.
+Clustering yang digunakan pada penelitian ini bertujuan untuk mereduksi kompleksitas pengeks-
+trakan data time series pada data satelit. Secara lebih spesiﬁk, pengekstrakan time series dalam
+satu area of interest tertentu dilakukan dengan mereduksi setiap piksel pada area tersebut menjadi
+satu nilai, dan dilakukan terhadap banyak image pada waktu yang berbeda. Hal tersebut juga secara
+utama membantu proses klasiﬁkasi secara time series , di mana klasiﬁkasi tidak dilakukan pada
+setiap piksel, melainkan superpixel. Dengan alasan tersebut, algoritma SNIC dianggap lebih tepat
+dalam implementasi clustering, karena mempunyai pendekatan superpixel dan mempertimbangkan
+informasi spasial dalam langkahnya.
+Algoritma SNIC pada Google Earth Engine mempunyai 6 parameter utama, yaitu:
+• image: Merupakan parameter utama, yaitu gambar di mana SNIC akan dijalankan. Input
+pada parameter tersebut harus bertipe ee.Image.
+• size: Merupakan jarak antar superpixel, dalam satuan piksel. Jika tidak memasukkan nilai
+pada parameter ini, nilainya akan ditetapkan sebagai 5.
+• compactness: Merupakan variabel m pada konsep SNIC, yang mengatur pembobotan antara
+kedekatan spasial dan kemiripan nilai. Semakin tinggi nilai compactness, maka kedekatan
+spasial akan mempunyai bobot yang lebih besar.
+• connectivity: Nilai antara 4 atau 8, yang menyatakan koneksi ketetanggaan antar piksel.
+Nilai 4 menyatakan ketetanggaan 4 arah, yaitu hanya menganggap piksel bertetangga jika
+bersentuhan secara horizontal dan vertikal (atas, bawah, kiri, dan kanan). Nilai 8 menyatakan
+ketetanggaan 8 arah, dengan menganggap piksel yang bersentuhan secara diagonal juga
+merupakan tetangga.
+• neighborhoodSize: Menyatakan luas jendela pencarian pada setiap superpiksel, di mana nilai
+wajarnya adalah 2 → size. Artinya, piksel dapat di- cluster menjadi bagian superpixel tertentu
+jika masih berada dalam jendela neighborhoodSize → neighborhoodSize dari superpixel.
+• seeds: Menerima input gambar, jika ingin menetapkan posisi-posisi superpixel.P i k s e l - p i k s e l
+yang bernilai > 0 akan dianggap lokasi-lokasi superpixel. Jika tidak ada nilainya, maka akan
+dibuat superpixels dengan jarak size.
+Pada Kode 3.23, dilakukan implementasi SNIC pada Google Earth Engine , dengan area of
+interestnya adalah area Kampung Pandanwangi. Kemudian, dilakukan visualisasi dari hasil clustering
+pada Gambar 3.24
+Kode 3.23: Implementasi SNIC Pada Google Earth Engine 
+1 // Memilih citra Sentinel -2 pada area of interest yang bersih dari awan . (Pemilihan dilakukan secara manual atau dapat melalui
+filtering pada parameter CLOUDY_PIXEL_PERCENTAGE )
+2 var clear_warungkondang = filtered_s2.filterDate(’2024 -07 -25 ’, ’2024 -07 -31 ’)
+3 var chosen_img = clear_warungkondang.first()
+4
+5 var ndvi = chosen_img.normalizedDifference([’B8 ’, ’B4 ’]).rename(’ndvi ’);
+6 var evi = chosen_img.expression(
+7 ’2.5 !*!(( NIR !-!RED )!/!(NIR !+!6!*!RED !-!7.5 !*!BLUE !+!1) )’,{
+8 ’NIR ’: chosen_img.select(’B8 ’),
+9 ’RED ’: chosen_img.select(’B4 ’),
+10 ’BLUE ’: chosen_img.select(’B2 ’)
+11 }).rename(’evi ’);
+12
+13 var input_snic = chosen_img.addBands([ndvi, evi]);
+14
+--- PAGE 112 ---
+3.5. Eksplorasi Pengunduhan Data Time Series Pada Clusters 87
+15 // Jalankan algoritma SNIC pada input_snic , dengan parameter size 20, compactness 3 (artinya bobot pada kedekatan spasial lebih
+besar ), dan konektivitas 8 arah . Hasil dari algoritma tersebut merupakan ee .Image , dengan band ’clusters ’, dan setiap band
+yang ada dengan suffix ’_mean ’. Band ’cluster ’ berisi nilai cluster_id pada setiap piksel , yaitu identifikasi kelompok
+cluster pada setiap piksel .
+16
+17 var snic_algo = ee.Algorithms.Image.Segmentation.SNIC({
+18 image: input_snic,
+19 size:2 0 ,
+20 compactness:3 ,
+21 connectivity:8
+22 });
+23
+24 // Kemudian konversi seluruh cluster menjadi vectors , yang disimpan dalam bentuk ee .FeatureCollection . Pada algoritma tersebut ,
+label pada setiap cluster harus diletakkan sebagai band pertama dan bertipe Integer .
+25
+26 var clippedSnic = snic_algo.clip(curr_geom).select(’clusters ’)
+27
+28 var vectors = clippedSnic.reduceToVectors({
+29 geometryType: ’polygon ’, // salah satu antara ’polygon ’ (bentuk sebenarnya dari setiap cluster ) , ’bb ’ (persegi yang mencakup
+piksel -pikselnya ), dan ’centroid ’ (hanya centroid dari setiap clusternya saja )
+30 scale:1 0 , // resolusi spasial dalam meter
+31 eightConnected: true,
+32 maxPixels:1 e10, // menetapkan jumlah piksel maksimum yang dapat diproses adalah 10^10, karena nilai defaultnya 10^7 (jika
+jumlah piksel yang diproses melewati batasan , program akan berhenti berjalan ).
+33 labelProperty: ’cluster_id ’, // memberikan nama pada properti , tempat id dari cluster ingin disimpan
+34 });
+35
+36 // Menampilkan hasil clustering
+37 Map.addLayer(vectors,{color: ’red ’,
+38 width:2
+39 }, ’Cluster !Result !Vectors ’)
+ 
+(a) Visualisasi RGB
+ (b) RGB zoomed
+ (c) Hasil clustering
+Gambar 3.24: Visualisasi hasil clustering dengan SNIC pada area Kampung Pandanwangi. Visuali-
+sasi diperbesar karena hasil cluster yang sangat banyak pada area yang luas.
+3.5 Eksplorasi Pengunduhan Data Time Series Pada Clusters
+Pengekstrakan data time series pada setiap cluster dilakukan pada Google Earth Engine .M e t o d e
+tersebut dilakukan dengan menghitung mean pada setiap cluster pada setiap image. Kemudian,
+format tabular yang menyimpan informasi tersebut dikonstruksi dan diunduh. Implementasi
+terhadap ekstraksi time series pada setiap cluster diimplementasikan pada Kode 3.24.
+Kode 3.24: Ekstraksi informasi time series pada setiap cluster 
+1 var curr_vec = vectors // Masukkan vector hasil clustering
+2
+3 var getFeatureMean = function(image){
+4 return image.select(’evi ’).reduceRegions({ // Fungsi untuk melakukan reduce pada setiap region
+5 collection: curr_vec.select([’cluster_id ’]), // Region ditandai dengan property ’cluster_id ’
+6 reducer: ee.Reducer.mean(), // Reduce dilakukan dengan metode mean
+7 scale:1 0
+8 })
+9
+10 // Fungsi reduceRegions mengembalikan FeatureCollection yang mempunyai properti baru yaitu ’mean ’
+11 .map(function(feature){
+12 // Menetapkan id image (nama image ) pada property imageId
+13 return feature.set(’imageId ’, image.id());
+14 })
+15 }
+16
+17 // Melakukan map pada setiap image dalam ImageCollection yang dipilih .
+18 var img_clusterId = sl_evi.map(getFeatureMean).flatten()
+ 
+Secara lebih detail mengenai jalan kerja Kode 3.24, pada setiap ee.Image dalam ee.ImageCollection,
+diterapkan fungsi reduceRegions(), yang akan menghasilkan sebuah ee.FeatureCollection yang
+--- PAGE 113 ---
+88 Bab 3. Eksplorasi Teknologi
+berisi ee.Feature yang merepresentasikan setiap cluster pada vectors hasil clustering. Pada
+setiap ee.Feature (cluster) tersebut, terdapat properti yaitu ’mean’ yang didapatkan dari nilai
+rata-rata seluruh piksel pada wilayah cluster tersebut, dan properti ’imageId’ yang bernilai ID
+dari ee.Image. Sehingga, hasil akhir dari fungsi tersebut merupakan sebuah collection yang berisi
+ee.FeatureCollection dari hasil reduceRegions() pada setiap image. Kemudian, ﬂatten digu-
+nakan untuk menyederhanakan collection tersebut menjadi sebuah ee.FeatureCollection yang
+berisi ee.Feature yang mempunyai id imageId_clusterId, yang berisi informasi setiap cluster dari
+setiap gambar.
+Pada saat melakukan pengunduhan, ee.FeatureCollection hasil dari tahap sebelumnya difor-
+mat kembali menjadi sebuah tabel, di mana setiap kolomnya menyimpan id pada setiap gambar
+yang ada (terdapat informasi tanggal) dan setiap barisnya menyimpan informasi dari cluster_id
+untuk memudahkan pemrosesan (lihat Tabel 3.6). Implementasi mengenai format tersebut terdapat
+pada Kode 3.25.
+Tabel 3.6: Contoh hasil ekstraksi data time series pada setiap cluster (Nilai EVI)
+cluster_id 20171005 20171010 20171015 20171020 20171025 ...
+1 0.42 0.51 0.47 0.53 0.49 ...
+2 0.35 0.38 0.41 0.44 0.39 ...
+3 0.61 0.58 0.63 0.59 0.65 ...
+4 0.29 0.31 0.27 0.33 0.30 ...
+5 0.55 0.52 0.57 0.54 0.56 ...
+Kode 3.25: Formatting pada data time series 
+1 var format = function(table, rowId, colId){
+2 // Ambil FeatureCollection dari masing -masing rowId secara distinct /unik (cluster_id )
+3 var rows = table.distinct(rowId);
+4 // Lakukan join pada table utama , pada setiap feature dengan rowId yang sama (satu cluster_id dimiliki oleh beberapa fitur
+dengan imageId yang berbeda ), simpan dalam properti ’matches ’
+5 var joined = ee.Join.saveAll(’matches ’).apply({
+6 primary: rows,
+7 secondary: table,
+8 condition: ee.Filter.equals({
+9 leftField: rowId,
+10 rightField: rowId
+11 })
+12 });
+13
+14 return joined.map(function(row){
+15 // Mendapatkan semua hasil join (fitur -fitur yang row_idnya sesuai )
+16 var values = ee.List(row.get(’matches ’))
+17 // Mengiterasi seluruh fiturnya untuk mendapatkan colId (imageId ) dan nilai ’mean ’ nya .
+18 .map(function(feature){
+19 feature = ee.Feature(feature);
+20 return [ee.String(feature.get(colId)), feature.get(’mean ’)];
+21 });
+22 // Mengembalikan row yang mempunyai property berupa : {image_id }: {mean }
+23 // ee .Dictionary menerima input berupa list dari key value pairs , seperti : [’ a’, 3, ’b’, 4, ’c’, 5]
+24 return row.select([rowId]).set(ee.Dictionary(values.flatten()));
+25 });
+26 };
+27
+28 // Memformat tabel dan menyimpan dalam variabel table_ndvi
+29 var table_ndvi = format(img_clusterId, ’cluster_id ’, ’imageId ’);
+30
+31 Export.table.toDrive({
+32 collection: table_ndvi,
+33 description: "export !timeseries !per !cluster "
+34 folder: ’earthengine ’,
+35 fileFormat: ’CSV ’ // Mengunduhnya sebagai CSV
+36 });
+ 
+3.6 Eksplorasi Metode Klasiﬁkasi
+Klasiﬁkasi dapat dimanfaatkan untuk menemukan wilayah persawahan dalam kecamatan tertentu,
+maupun menemukan jenis vegetasi tertentu, misalnya padi pandanwangi, berdasarkan karakteristik
+--- PAGE 114 ---
+3.6. Eksplorasi Metode Klasifikasi 89
+temporalnya. Hal tersebut dilakukan dengan mengimplementasikan metode KNN-DTW yang telah
+dipelajari pada Bagian 2.8.1. Implementasi KNN-DTW dilakukan pada Google Earth Engine dan
+mesin lokal dengan Python. Sebagai studi eksplorasi, dilakukan klasiﬁkasi terhadap wilayah yang
+merupakan persawahan dan bukan persawahan, pada Kecamatan Campaka.
+3.6.1 KNN-DTW untuk Klasiﬁkasi Wilayah Persawahan
+Pada wilayah yang luas, pencarian wilayah bersawah akan sulit untuk dilakukan dengan interpretasi
+visual oleh manusia. Oleh karena itu, digunakan metode klasiﬁkasi untuk mengidentiﬁkasi wilayah
+yang merupakan sawah dan bukan. Hal tersebut dilakukan dengan membuat data pelatihan yang
+mencakup beberapa wilayah persawahan dan bukan persawahan, untuk mengidentiﬁkasi kelas dari
+wilayah-wilayah dalam skala yang lebih besar. Proses klasiﬁkasi juga dilakukan setelah proses
+clustering, sehingga satuan terkecil wilayah yang ditinjau merupakan cluster atau superpixel.
+Pembuatan data pelatihan dilakukan dengan melakukan interpretasi visual pada peta interaktif
+Google Earth Engine , dengan menyeleksi wilayah-wilayah ( clusters) mana saja yang merupakan
+persawahan dan bukan persawahan. Pada tahap ini, dilakukan eksplorasi metode klasiﬁkasi
+persawahan terhadap Kecamatan Campaka, karena kecamatan tersebut mempunyai area yang
+cukup luas, sehingga sulit untuk menginterpretasi wilayah persawahan secara keseluruhan.
+Pada Gambar 3.25, dilakukan pengumpulan data pelatihan dengan menandai 56 wilayah
+persawahan dan 59 wilayah yang bukan persawahan berdasarkan interpretasi visual. Kemudian,
+hasil pelabelan tersebut diunduh menjadi sebuah csv (comma separated values ), seperti pada
+Tabel 3.7 yang diimplementasikan pada Kode 3.26, untuk dijadikan sebagai sumber data pelatihan.
+Gambar 3.25: Tampilan peta interaktif pada Google Earth Engine dan tools untuk melakukan
+pelabelan. Wilayah sawah ditandai dengan warna merah muda dan wilayah yang bukan persawahan
+ditandai dengan warna merah.

@@ -1,0 +1,1245 @@
+--- PAGE 138 ---
+4.3. Clustering SNIC 113
+9 ’saturation_vapor_pressure’,
+10 ’vapor_pressure_deficit’,
+11 ]
+12
+13 df = df[chirts_features]
+14 df.loc[:, ’temperature_range’]= df[’maximum_temperature’]- df[’minimum_temperature’]
+15
+16 df.to_csv(".../path/to/directory") # terakhir data yang telah di-cleaning disimpan pada direktori yang diinginkan
+ 
+Tabel 4.9: Ringkasan Statistik Deskriptif Hasil Pembersihan Dataset CHIRTS
+V ariabel Count Mean Std Min Max
+heat_index 12419 73.47 1.62 65.56 80.74
+maximum_temperature 12419 26.60 1.19 20.77 31.36
+minimum_temperature 12419 18.80 1.10 11.94 21.83
+relative_humidity 12419 88.19 4.75 58.66 99.08
+saturation_vapor_pressure 12419 2.86 0.15 2.28 3.53
+vapor_pressure_deﬁcit 12419 0.37 0.15 0.03 1.37
+temperature_range 12419 7.80 1.60 1.89 14.71
+4.3 Clustering SNIC
+Pada pengumpulan data sebelumnya (lihat kembali Bagian 4.1.5), didapat sekitar 80,000 piksel
+untuk data pelatihan klasiﬁkasi Padi Pandanwangi dan 45,000 piksel untuk data pelatihan klasiﬁkasi
+persawahan. Hal tersebut akan menjadi tantangan secara komputasi, karena algoritma klasiﬁkasi
+KNN harus menghitung jarak antar setiap piksel berlabel dengan data yang ingin diprediksi, di mana
+setiap jaraknya dihitung dengan menggunakan DTW, yang mempunyai kompleksitas algoritma
+sebesar O(N 2) untuk dua deret waktu sepanjang N . Di mana, pada pengumpulan data citra dari
+tahun 1983 hingga sekarang, terdapat setidaknya 1,000 citra atau poin data time series .
+Sebagai contoh, pada satu titik, harus dihitung jarak terhadap 45.000 titik lainnya, dengan
+penghitungan jarak antar masing-masing titik dilakukan dengan melakukan 1.000.000 iterasi
+(berdasarkan kompleksitas DTW yang dilakukan pada 1.000 titik data). Ditambah, seluruh
+piksel yang akan diprediksi berjumlah bervariasi, dari 200.000 piksel pada Kecamatan Cianjur
+hingga 1.500.000 piksel pada Kecamatan Campaka. Oleh karena itu, diperlukan pendekatan untuk
+mengurangi jumlah data yang dihitung secara langsung, yaitu dengan metode SNIC ( Simple Non-
+Iterative Clustering ). Dengan mereduksi 100 hingga 400 piksel menjadi superpixel, maka jumlah
+data yang dipertimbangkan dalam klasiﬁkasi akan berkurang. Berikut merupakan jumlah piksel
+dari setiap kecamatan yang akan diklasiﬁkasikan:
+• Kecamatan W arungkondang: 460,646 piksel.
+• Kecamatan Gekbrong : 501,391 piksel.
+• Kecamatan Cugenang : 764,410 piksel.
+• Kecamatan Cianjur : 264,471 piksel.
+• Kecamatan Campaka : 1,438,074 piksel.
+• Kecamatan Cilaku : 529,026 piksel.
+• Kecamatan Cibeber : 1,246,887 piksel.
+4.3.1 Implementasi Clustering
+Implementasi clustering SNIC dilakukan pada platform Google Earth Engine , dengan menggunakan
+ee.Algorithms.Image.Segmentation.SNIC yang telah dieksplorasi pada Bagian 3.4 sebelumnya.
+Untuk mencari hasil clustering yang paling baik, digunakan metode evaluasi intrinsik dengan
+menghitung rata-rata nilai variansi di dalam setiap cluster yang terbentuk.
+--- PAGE 139 ---
+114 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+Pada algoritma tersebut, terdapat dua parameter utama yang dapat diatur untuk melihat hasil
+clustering yang berbeda, yaitu size dan compactness (lihat kembali Bagian 3.4). Untuk parameter
+size, ingin dicari ukuran superpixel yang lebih besar, namun mempunyai rata-rata variansi yang
+lebih kecil untuk mereduksi proses komputasi yang dilakukan. Untuk parameter compactness,
+ingin dicari nilai yang lebih besar, supaya bentuk cluster tidak terlalu tersebar (meminimalisir
+terbentuknya cluster yang berbentuk Multipolygon). Oleh karena itu, pencarian parameter yang
+optimal dilakukan dengan melakukan beberapa iterasi clustering SNIC , dengan mengukur rata-rata
+variansinya. Hasil dari parameter terbaik tersebut kemudian diaplikasikan secara konsisten untuk
+seluruh kecamatan yang ingin dilihat. Berikut merupakan iterasi yang dilakukan:
+• size: [4, 5, 6, 7, 8, 9, 10]
+• compactness: [1, 5, 10, 25, 50, 100]
+Total iterasi berjumlah 42, dengan membuat kombinasi yang berbeda pada parameter size dan
+compactness. Untuk parameter size, misalnya n, ukuran spasial citra yang akan diproses hanya
+menjadi 1
+n2 . Oleh karena perubahan nilai pada variabel tersebut memengaruhi ukuran cluster secara
+kuadratik, maka dilakukan perubahan nilai secara bertahap pada setiap iterasi, yaitu +1. Pada
+setiap iterasi, rata-rata variansi yang diukur berdasar pada indeks EVI, kemudian nilai rata-rata
+tersebut dicatat bersamaan dengan jumlah cluster yang terbentuk. Pencarian parameter terbaik
+dilakukan pada tujuh kecamatan yang ditanami Padi Pandanwangi. Citra yang bersih dari awan
+yang digunakan untuk clustering wilayah Cianjur merupakan citra Sentinel-2 pada 18-07-2020 (lihat
+Gambar 4.17). Implementasi mengenai parameter tuning tersebut terdapat pada Kode 4.9.
+Kode 4.9: Implementasi parameter tuning untuk clustering SNIC 
+1 // Pengambilan citra yang mempunyai persentase awan di bawah 2 persen
+2 var clear_img = filtered_s2.filter(ee.Filter.lt(" CLOUDY_PIXEL_PERCENTAGE ",2 ) )
+3 var chosen_img = clear_img.first()
+4
+5 // Penambahan band EVI dan NDVI pada citra
+6 var ndvi = chosen_img.normalizedDifference([’B8 ’, ’B4 ’]).rename(’ndvi ’).clamp(-1, 1). toFloat();
+7 var evi = chosen_img.expression(
+8 ’2.5 !*!(( NIR !-!RED )!/!(NIR !+!6!*!RED !-!7.5 !*!BLUE !+!1) )’,{
+9 ’NIR ’: chosen_img.select(’B8 ’),
+10 ’RED ’: chosen_img.select(’B4 ’),
+11 ’BLUE ’: chosen_img.select(’B2 ’)
+12 }).rename(’evi ’).clamp(-1, 1). toFloat();
+13
+14 var input_snic = chosen_img.addBands([ndvi, evi]);
+15
+16 var list_kecamatan =[ ’Warungkondang ’, ’Gekbrong ’, ’Cugenang ’, ’Cianjur ’, ’Campaka ’, ’Cilaku ’, ’Cibeber ’]
+17
+18 // Buat filter yang merepresentasikan setiap kecamatan
+19 var filters = list_kecamatan.map(function(nama){
+20 return ee.Filter.eq(’NAME_3 ’, nama);
+21 });
+22
+23 // Gabungkan semua filter menggunakan ee .Filter .or
+24 var combinedFilter = filters.reduce(function(acc, curr){
+25 return ee.Filter.or(acc, curr);
+26 });
+27
+28 // Tetapkan area of interest pada variabel region
+29 var region = gadm_idn.filter(ee.Filter.eq("NAME_2 ", "Cianjur ")).filter(combinedFilter).geometry()
+30
+31 // List parameter untuk dituning
+32 var snic_size_list =[ 4 ,5 ,6 ,7 ,8 ,9 ,1 0 ] ;
+33 var snic_compactness_list =[ 1 ,1 0 ,2 5 ,5 0 ,1 0 0 ] ;
+34
+35 // Fungsi untuk menjalankan SNIC dengan parameter tertentu dan menghitung variance mean
+36 var runSNICWithParams = function(snic_size, snic_compactness){
+37 // Jalankan algoritma SNIC dengan parameter tertentu
+38 var snic_algo = ee.Algorithms.Image.Segmentation.SNIC({
+39 image: input_snic,
+40 size: snic_size,
+41 compactness: snic_compactness,
+42 connectivity:8
+43 });
+44
+45 // Ekstrak hasil clippedSnic
+46 var clippedSnic = snic_algo.select(’clusters ’).clip(region);
+47
+48 // Konversi ke vektor
+49 var vectors = clippedSnic.reduceToVectors({
+50 geometryType: ’polygon ’,
+51 scale:1 0 ,
+52 eightConnected: true,
+53 maxPixels:1 e10,
+54 labelProperty: ’cluster_id ’,
+55 });
+56
+57 // Hitung variansi dari setiap cluster
+--- PAGE 140 ---
+4.3. Clustering SNIC 115
+58 var variance_of_clusters = input_snic.select(’evi ’).reduceRegions({
+59 collection: vectors.select([’cluster_id ’]),
+60 reducer: ee.Reducer.variance(),
+61 scale:1 0
+62 });
+63
+64 // Hitung rata -rata variansi
+65 var variance_mean = variance_of_clusters.aggregate_mean(’variance ’);
+66
+67 // Hitung jumlah cluster
+68 var cluster_count = vectors.size();
+69
+70 // Kembalikan hasil sebagai feature dengan properti parameter dan metrik
+71 return ee.Feature(null,{
+72 ’snic_size ’: snic_size,
+73 ’snic_compactness ’: snic_compactness,
+74 ’variance_mean ’: variance_mean,
+75 ’total_clusters ’: cluster_count
+76 });
+77 };
+78
+79 // Buat semua kombinasi parameter
+80 var all_combinations =[ ] ;
+81 for (var i =0 ; i < snic_size_list.length; i++) {
+82 for (var j =0 ; j < snic_compactness_list.length; j++) {
+83 all_combinations.push([snic_size_list[i], snic_compactness_list[j]]);
+84 }
+85 }
+86
+87 // Konversi kombinasi parameter ke ee .List
+88 var combinationsList = ee.List(all_combinations);
+89
+90 // Map setiap kombinasi parameter
+91 var results = ee.FeatureCollection(combinationsList.map(function(combo){
+92 combo = ee.List(combo);
+93 var size = ee.Number(combo.get(0));
+94 var compactness = ee.Number(combo.get(1));
+95 return run_snic_with_params(size, compactness);
+96 }));
+97
+98 // Ekspor hasil ke CSV
+99 Export.table.toDrive({
+100 collection: results,
+101 description: ’SNIC_Parameter_Tuning_Results ’,
+102 fileFormat: ’CSV ’,
+103 folder: ’earthengine ’,
+104 selectors:[ ’snic_size ’, ’snic_compactness ’, ’variance_mean ’, ’total_clusters ’] // Kolom yang dimasukkan dalam CSV
+105 });
+ 
+Gambar 4.17: Citra yang dibatasi pada tujuh kecamatan penanaman Padi Pandanwangi
+Terdapat dua pertimbangan untuk menentukan parameter yang diambil, yaitu nilai rata-
+rata variansi dan jumlah cluster yang terbentuk. Semakin sedikit cluster yang terbentuk, maka
+reduksi kompleksitas komputasi menjadi semakin baik. Namun, di sisi lain, wilayah persawahan
+menjadi semakin heterogen, ditandakan dengan nilai rata-rata variansi yang meningkat. Untuk
+menyeimbangkan kedua faktor tersebut, digunakan sebuah metode weighted average , dengan
+--- PAGE 141 ---
+116 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+pembobotan yang dapat diatur.
+Sebelum melakukan penghitungan weighted average, dilakukan proses normalisasi min–maks
+terhadap nilai rata-rata variansi dan jumlah cluster agar berada dalam rentang skala 0 hingga 1.
+Normalisasi ini dilakukan menggunakan Rumus 4.1 berikut:
+xnorm = x ↑ xmin
+xmax ↑ xmin
+(4.1)
+di mana x merupakan nilai asli (baik rata-rata variansi maupun jumlah cluster), sedangkan
+xmin dan xmax masing-masing adalah nilai minimum dan maksimum pada faktor yang berkaitan.
+Selanjutnya, penilaian untuk setiap kombinasi parameter dihitung menggunakan Rumus 4.2:
+clustering_score = ϖ · mean_of_variancenorm +( 1 ↑ ϖ) · total_clustersnorm (4.2)
+dengan ϖ ≃ [0, 1] sebagai konstanta untuk memberi bobot, mean_of_variancenorm dan
+total_clustersnorm merupakan nilai normalisasi dari masing-masing metrik. Dalam kasus ini, ingin
+diberikan bobot yang lebih besar pada jumlah cluster, karena tujuan utama dari pendekatan super-
+pixel adalah mereduksi kompleksitas komputasi. Hasil dari parameter tuning dengan pembobotan
+yang lebih besar pada jumlah cluster (ϖ =0 .3), terdapat pada Tabel 4.10. Di mana, nilai score
+yang paling kecil yang dipertimbangkan untuk diambil ( size =9 dan compactness = 10).
+Tabel 4.10: Hasil Parameter Tuning Clustering SNIC (Seluruh Kecamatan), dengan ϖ =0 .3
+size compactness variance_mean clusters variance_norm clusters_norm score
+4 1 0.00724703 326312 0.00 1.00 0.700
+4 10 0.00724849 326316 0.00 1.00 0.700
+4 25 0.00725008 326312 0.00 1.00 0.700
+4 50 0.00726378 326306 0.00 1.00 0.701
+4 100 0.00729011 326287 0.01 1.00 0.703
+5 1 0.00819464 209447 0.23 0.57 0.471
+5 10 0.00819445 209446 0.23 0.57 0.471
+5 25 0.00819525 209447 0.24 0.57 0.471
+5 50 0.00820727 209441 0.24 0.57 0.472
+5 100 0.00822575 209448 0.24 0.57 0.473
+6 1 0.00919509 145960 0.48 0.34 0.382
+6 10 0.00919549 145958 0.48 0.34 0.382
+6 25 0.00919287 145960 0.48 0.34 0.382
+6 50 0.00919585 145958 0.48 0.34 0.382
+6 100 0.00920739 145951 0.49 0.34 0.383
+7 1 0.00977592 107607 0.63 0.20 0.327
+7 10 0.00977918 107607 0.63 0.20 0.328
+7 25 0.00977972 107606 0.63 0.20 0.328
+7 50 0.00977953 107602 0.63 0.20 0.328
+7 100 0.00979733 107600 0.63 0.20 0.329
+8 1 0.01043185 82732 0.79 0.11 0.312
+8 10 0.01043375 82730 0.79 0.11 0.312
+8 25 0.01043412 82725 0.79 0.11 0.312
+Dilanjutkan pada halaman berikutnya
+--- PAGE 142 ---
+4.3. Clustering SNIC 117
+T abel 4.10 – Lanjutan dari hasil parameter tuning
+size compactness variance_mean clusters variance_norm clusters_norm score
+8 50 0.01043465 82726 0.79 0.11 0.312
+8 100 0.01043561 82723 0.79 0.11 0.313
+9 1 0.01078457 65571 0.88 0.04 0.295
+9 10 0.01078458 65571 0.88 0.04 0.295
+9 25 0.01078529 65572 0.88 0.04 0.295
+9 50 0.01078844 65574 0.88 0.04 0.295
+9 100 0.01079433 65569 0.88 0.04 0.295
+10 1 0.01127945 53358 1.00 0.00 0.300
+10 10 0.01127757 53357 1.00 0.00 0.300
+10 25 0.01127885 53353 1.00 0.00 0.300
+10 50 0.01127524 53359 1.00 0.00 0.300
+10 100 0.01127946 53354 1.00 0.00 0.300
+Dengan dilakukan clustering SNIC pada setiap Kecamatan, jumlah reduksi piksel yang direpre-
+sentasikan dengan clusters menjadi:
+• Kecamatan W arungkondang: 460,646 piksel ⇔ 6,134 clusters.
+• Kecamatan Gekbrong : 501,391 piksel ⇔ 6,552 clusters.
+• Kecamatan Cugenang : 764,410 piksel ⇔ 9,892 clusters.
+• Kecamatan Cianjur : 264,471 piksel ⇔ 3,558 clusters.
+• Kecamatan Campaka : 1,438,074 piksel ⇔ 18,495 clusters.
+• Kecamatan Cilaku : 529,026 piksel ⇔ 6,898 clusters.
+• Kecamatan Cibeber : 1,246,887 piksel ⇔ 16,131 clusters.
+4.3.2 Penyesuaian dataset pelatihan setelah clustering
+Pada dua dataset pelatihan untuk klasiﬁkasi yang dikumpulkan pada Bagian 4.1.5 sebelumnya,
+dilakukan penyesuaian ulang agar label yang dikumpulkan mencakup cluster-cluster yang relevan.
+Hasil dari penyesuaian tersebut terdapat pada Gambar 4.18, di mana dikumpulkan sejumlah 336
+clusters yang berlabel Pandanwangi dan 346 clusters yang berlabel non-Pandanwangi. Data
+pelabelan tersebut telah diunggah menjadi asset pada Google Earth Engine dan dapat diakses
+seperti pada Kode 4.10. Kemudian, data berlabel tersebut diunduh menjadi format CSV, yang
+diimplementasikan pada Kode 4.11.
+Kode 4.10: FeatureCollection dari dataset pelabelan klasiﬁkasi Pandanwangi dan non-Pandanwangi
+di Kecamatan Warungkondang 
+1 var pelabelan_pandanwangi = ee.FeatureCollection("projects /ee -vicopratama449 /assets / label_pandanwangi_warungkondang ");
+ 
+Kode 4.11: Pengunduhan data pelabelan menjadi csv 
+1
+2 var snic_algo = ee.Algorithms.Image.Segmentation.SNIC({
+3 image: input_snic,
+4 size: snic_size, // pilihlah size yang optimal dari hasil parameter tuning
+5 compactness: snic_compactness, // pilih compactness yang optimal
+6 connectivity:8
+7 });
+8
+9 var clippedSnic = snic_algo.clip(curr_geom).select(’clusters ’)
+10
+11 var vectors = clippedSnic.reduceToVectors({
+12 geometryType: ’polygon ’,
+13 scale:1 0 ,
+14 eightConnected: true,
+15 maxPixels:1 e10,
+16 labelProperty: ’cluster_id ’,
+--- PAGE 143 ---
+118 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+17 });
+18
+19 var label_pw = vectors.filterBounds(label_pw).map(function(feature){
+20 return ee.Feature(feature.geometry(), { ’cluster_id ’: feature.get(’cluster_id ’), ’label ’: ’pandanwangi ’});
+21 })
+22 var label_nonpw = vectors.filterBounds(label_nonpw).map(function(feature){
+23 return ee.Feature(feature.geometry(), { ’cluster_id ’: feature.get(’cluster_id ’), ’label ’: ’non -pandanwangi ’});
+24 })
+25 print("label !non -pandanwangi :", label_nonpw.size())
+26
+27 var labels = label_pw.merge(label_nonpw);
+28 Export.table.toDrive({
+29 collection: labels,
+30 folder: ’earthengine ’,
+31 description: ’label_pandanwangi_ids ’,
+32 fileFormat: ’CSV ’
+33 });
+ 
+Gambar 4.18: Hasil penyesuaian label pandanwangi pada Kecamatan Warungkondang
+Untuk dataset pelatihan lainnya, yaitu pelabelan wilayah persawahan pada Kecamatan Campaka,
+dilakukan juga penyesuaian ulang label sesuai dengan cluster, dan didapat 378 clusters yang
+berlabel sawah dan 389 clusters yang berlabel non-sawah. Hasil pelabelan dapat diakses pada GEE,
+seperti pada Kode 4.12. Hasil penyesuaian tersebut terdapat pada Gambar 4.19. Nantinya, akan
+dikembangkan model yang memanfaatkan kedua dataset tersebut untuk menemukan wilayah-wilayah
+persawahan dan penanaman padi Pandanwangi pada setiap kecamatan.
+Kode 4.12: FeatureCollection dari dataset pelabelan klasiﬁkasi wilayah sawah dan non-sawah di
+Kecamatan Campaka 
+1 var pelabelan_sawah = ee.FeatureCollection("projects /ee -vicopratama449 /assets / label_sawah_campaka ");
+ 
+--- PAGE 144 ---
+4.4. Klasifikasi Wilayah Persawahan 119
+Gambar 4.19: Hasil penyesuaian label persawahan pada Kecamatan Campaka
+4.3.3 Ekstraksi data time series pada setiap cluster pada setiap kecamatan
+Sebelumnya, pada Bagian 3.5 telah diimplementasikan langkah pengunduhan data time series
+berdasarkan nilai rata-rata pada setiap cluster untuk suatu wilayah. Pada bagian ini, langkah
+tersebut diterapkan untuk setiap kecamatan, dengan menggunakan time series dari hasil penyiapan
+data pada Bagian 4.2.1. Hasil akhir pada tahap ini adalah tujuh dataset CSV dari setiap kecamatan,
+yang mempunyai format seperti pada Tabel 4.11, yang setiap barisnya berisi seluruh nilai rata-rata
+EVI dari setiap cluster pada kecamatan tersebut dari mulai April 1988 hingga Mei 2025. Nilai EVI
+dipertimbangkan untuk diambil, karena pada Gambar 3.23 sebelumnya, nilai EVI terlihat lebih
+resisten terhadap gangguan atmosfer.
+Tabel 4.11: Hasil ekstraksi data time series pada setiap cluster
+cluster_id 20171005 20171010 20171015 20171020 20171025 ...
+1 0.42 0.51 0.47 0.53 0.49 ...
+2 0.35 0.38 0.41 0.44 0.39 ...
+3 0.61 0.58 0.63 0.59 0.65 ...
+4 0.29 0.31 0.27 0.33 0.30 ...
+5 0.55 0.52 0.57 0.54 0.56 ...
+4.4 Klasiﬁkasi Wilayah Persawahan
+Pada setiap hasil csv yang telah diunduh pada Bagian 4.3.3, dilakukan klasiﬁkasi terhadap wilayah
+persawahan. Klasiﬁkasi tersebut dilakukan dengan membangun model klasiﬁkasi yang menggunakan
+algoritma KNN-DTW, yang mempelajari dataset pelatihan yang dikumpulkan pada Bagian 4.3.2.
+Algoritma KNN-DTW yang diimplementasikan mempunyai beberapa parameter, yaitu:
+• k: merupakan nilai k pada KNN yang menentukan sejumlah k tetangga terdekat yang dicek.
+--- PAGE 145 ---
+120 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+• constraint: variasi dari DTW yang ingin digunakan (’default’, atau ’sakoe_chiba’, atau
+’itakura’).
+• slope: slope yang ditentukan jika menggunakan constraint itakura DTW .
+• radius: radius yang ditentukan jika menggunakan constraint sakoe_chiba DTW.
+• start_year & span: rentang tahun yang ingin dipertimbangkan untuk melakukan klasiﬁkasi
+(misal, tahun 2020-2025 dianggap lebih baik untuk mengklasiﬁkasikan sawah dibanding pada
+tahun 2015-2020).
+Kelima parameter tersebut selanjutnya akan ditentukan pada model, dan hasil klasiﬁkasinya
+dievaluasi dengan metode K-fold cross validation dengan K = 10 untuk dinilai akurasinya (lihat
+kembali Bagian 2.8.5.6). Kemudian, pada kelima parameter tersebut akan dilakukan parameter
+tuning untuk mencari kombinasi parameter yang menghasilkan hasil evaluasi terbaik. Berikut
+merupakan daftar parameter yang akan di- tuning pada model klasiﬁkasi persawahan:
+• k: [3, 7, 11, 15, 19].
+• constraint: [’default’, ’sakoe_chiba’, ’itakura’].
+• slope: [2, 3, 4, 5].
+• radius: [15, 30, 60].
+• start_year: [2015, 2018, 2021].
+• span: [3, 5, 7] (rentang tahun).
+Hasil dari parameter tuning tersebut terdapat pada Tabel 4.12. Terdapat total 360 kombinasi
+parameter yang diuji, dan didapat bahwa metode sakoe-chiba, dengan parameter radius = 15 dan
+parameter k = 11 merupakan yang terbaik. Hasil dari parameter tersebut kemudian disimpan
+sebagai parameter terbaik dan digunakan oleh model untuk mengklasiﬁkasikan wilayah persawahan
+pada setiap kecamatan.
+Tabel 4.12: Hasil Parameter Tuning KNN-DTW Terbaik Klasiﬁkasi Sawah
+Rentang T ahun T erbaik Metode DTW Parameter T erbaik Akurasi
+2015–2022 Default – 85.40%
+2015–2020 Sakoe-Chiba radius = 15, k = 11 86.05%
+2015–2022 Itakura slope = 3, k = 11 85.66%
+Hasil dari klasiﬁkasi wilayah persawahan dengan model KNN-DTW yang menggunakan para-
+meter terbaik pada Tabel 4.12 pada setiap kecamatan, divisualisasikan pada Gambar 4.20. Dalam
+proses klasiﬁkasi wilayah persawahan, ditemukan sebuah data yang diunduh melalui platform
+Open Data Cianjur , yang memberikan informasi mengenai jumlah wilayah persawahan pada setiap
+kecamatan di Kabupaten Cianjur pada tahun 2022. Data tersebut dapat dilihat pada Tabel 4.13
+dan dapat digunakan untuk melakukan validasi pada hasil klasiﬁkasi persawahan.
+Hasil klasiﬁkasi pada Tabel 4.16 menunjukkan hasil bahwa luas lahan sawah yang diprediksi
+pada setiap kecamatannya bernilai tidak terlalu jauh dengan data referensinya pada Tabel 4.13.
+--- PAGE 146 ---
+4.4. Klasifikasi Wilayah Persawahan 121
+(a) Warungkondang
+ (b) Gekbrong
+ (c) Cugenang
+(d) Cianjur
+ (e) Cilaku
+ (f) Cibeber
+(g) Campaka
+Gambar 4.20: Visualisasi hasil klasiﬁkasi wilayah persawahan pada setiap kecamatan ( polygon
+hijau).
+Tabel 4.13: Luas Lahan Sawah Pada Beberapa Kecamatan di Kabupaten Cianjur (hektar)
+Kecamatan sawah_irigasi sawah_tadah_hujan total_lahan_sawah
+W ARUNGKONDANG 1963 0 1963.0
+GEKBRONG 1039.8 137 1053.5
+CUGENANG 1584.4 103.8 1688.2
+CIANJUR 1018 0 1018.0
+CAMPAKA 1068 589.1 1657.1
+CILAKU 2422.1 161 2438.2
+CIBEBER 1734.6 1503.9 3238.5
+--- PAGE 147 ---
+122 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+Tabel 4.14: Luas Setiap Lahan Sawah, Dengan Klasiﬁkasi KNN-DTW (hektar)
+Kecamatan Luas Lahan Sawah (hektar)
+W ARUNGKONDANG 1865.31
+GEKBRONG 819.19
+CUGENANG 1100.87
+CIANJUR 919.62
+CAMPAKA 1935.64
+CILAKU 2441.18
+CIBEBER 2885.96
+Implementasi mengenai klasiﬁkasi tersebut terdapat pada Kode 4.13. Pada Kode tersebut,
+terdapat kelas SawahClassification_KNNDTW yang mempunyai beberapa parameter inisiasi, yaitu:
+• filename: nama ﬁle sawah untuk pelabelan.
+• labeled_filename: nama ﬁle labeling yang diunduh, seperti pada Kode 4.11.
+• folder_name: nama folder yang menyimpan data cluster time series yang akan diprediksi.
+• output_folder: nama folder yang akan menyimpan hasil klasiﬁkasi persawahan.
+• evi: apakah ﬁle merupakan time series terhadap nilai EVI ( true), atau NDVI ( false)
+Untuk melakukan klasiﬁkasi maupun parameter tuning, digunakan beberapa function,s e p e r t i
+yang diimplementasikan pada Kode 4.14:
+• tune(dtw_tuner, knn_tune, date_tuner, output_file) : melakukan parameter tuning
+berdasarkan parameter yang diberikan. Parameter output_ﬁle adalah untuk mencatat hasil
+parameter tuning (dalam txt).
+• predict(filename): melakukan prediksi pada ﬁle cluster time series .
+• save_model(): menyimpan hasil parameter tuning terbaik dalam format .pkl.
+• load_model(params_filename): parameter yang ingin diload dengan format .pkl.
+Kode 4.13: Implementasi klasiﬁkasi wilayah persawahan 
+1 class SawahClassification_KNNDTW:
+2 def __init__(self,
+3 filename, # nama file sawah untuk pelabelan
+4 labeled_filename, # nama file pelabelan
+5 folder_name = ’raw_clusters_ts/’,
+6 output_folder = ’sawah_classification/’,
+7 evi = True, # EVI atau NDVI
+8 random_state =4 2
+9 ):
+10 self.labeled_filename = labeled_filename
+11 self.labeling_folder = ’labeling/’
+12 self.experiment_folder = ’experiment/’
+13 self.filename = "evi_" + filename if evi else filename
+14 self.kecamatan = filename.split(".")[0]
+15 self.evi = evi
+16 self.folder_name = folder_name
+17 self.output_folder = output_folder
+18 self.best_params ={ ’acc’:0 , ’dtw’: None, ’k’: None, ’year’: None}
+19 self.best_model = None
+20 self.wilayah_df = None
+21 self.labeled_merged = None
+22 self.wilayah_not_labeled = None
+23 self.labeled_df = None
+24 self.X_sawah = None
+25 self.y_sawah = None
+26 self.final_df = None
+27 self.sawah_clusters = None
+28 self.random_state = random_state
+29 self.preprocess()
+30
+31 def preprocess(self):
+32 start_time = time.time()
+33 wilayah_df = pd.read_csv(self.folder_name + self.filename)
+34 try:
+35 wilayah_df = wilayah_df.drop([".geo", "system:index"], axis=1)
+36 except:
+37 ""
+38 self.labeled_df = pd.read_csv(self.labeling_folder + self.labeled_filename).drop([".geo", "system:index"], axis=1)
+39
+40 # menghapus kolom yg namanya duplikat
+--- PAGE 148 ---
+4.4. Klasifikasi Wilayah Persawahan 123
+41 wilayah_df = wilayah_df.loc[:, ~ wilayah_df.columns.duplicated(keep=’first’)]
+42
+43 # mengurutkan kolom berdasarkan urutan tanggalnya
+44 wilayah_df = wilayah_df.reindex(sorted(wilayah_df.columns), axis=1)
+45 cluster_id = wilayah_df[’cluster_id’]
+46 wilayah_df = wilayah_df.iloc[:, 1:-1]. interpolate(axis=1)
+47 wilayah_df = wilayah_df.bfill(axis=1)
+48 wilayah_df = wilayah_df.ffill(axis=1)
+49 wilayah_df[’cluster_id’]= cluster_id
+50
+51 # print(wilayah_df)
+52 self.wilayah_df = wilayah_df
+53
+54 wilayah_labeled = wilayah_df[wilayah_df[’cluster_id’].isin(self.labeled_df[’cluster_id’])]
+55 self.wilayah_not_labeled = wilayah_df[~wilayah_df[’cluster_id’].isin(self.labeled_df[’cluster_id’])]
+56 print("Labeled data: " + str(wilayah_labeled.shape))
+57 print("Non-labeled data: " + str(self.wilayah_not_labeled.shape))
+58
+59 self.labeled_merged = pd.merge(wilayah_labeled, self.labeled_df, on=’cluster_id’, how=’left’)
+60 self.X_sawah = self.labeled_merged.iloc[:, :-2]
+61 self.y_sawah = self.labeled_merged[’label’]
+62 print("--- Preprocessing done in %s seconds ---" %( time.time() - start_time))
+63
+64 def tune(self, dtw_tuner = None, knn_tuner = None, date_tuner = None, output_file=’loaded_model.txt’):
+65 output_file = self.experiment_folder + output_file
+66
+67 if dtw_tuner is None:
+68 dtw_tuner ={
+69 ’constraint’:[ ’default’],
+70 ’slope’:[ ] ,
+71 ’radius’:[ ]
+72 }
+73
+74 if knn_tuner is None:
+75 knn_tuner =[ 5 ]
+76
+77 if date_tuner is None:
+78 date_tuner ={
+79 ’start’:[ 2 0 2 0 ] ,
+80 ’span’:[ 5 ]
+81 }
+82
+83 with open(output_file, ’w’) as f:
+84 # Write header information
+85 f.write("=" * 80 + "\n")
+86 f.write(f"SAWAH CLASSIFICATION KNN-DTW TUNING EXPERIMENT\n")
+87 f.write(f"Date: {datetime.now().strftime(’%Y-%m-%d %H:%M:%S’)}\n")
+88 f.write(f"Dataset: {self.filename}\n")
+89 f.write(f"Labels: {self.labeled_filename}\n")
+90 f.write(f"EVI mode: {self.evi}\n")
+91 f.write("=" * 80 + "\n\n")
+92
+93 # Write experiment parameters
+94 f.write("EXPERIMENT PARAMETERS:\n")
+95 f.write(f"DTW constraints: {dtw_tuner[’constraint’]}\n")
+96 f.write(f"DTW slopes: {dtw_tuner[’slope’]}\n")
+97 f.write(f"DTW radii: {dtw_tuner[’radius’]}\n")
+98 f.write(f"KNN values: {knn_tuner}\n")
+99 f.write(f"Start years: {date_tuner[’start’]}\n")
+100 f.write(f"Year spans: {date_tuner[’span’]}\n\n")
+101
+102 date_columns =[ col for col in self.X_sawah.columns]
+103
+104 # encode label menjadi numerik agar lebih hemat dalam memproses
+105 le = LabelEncoder()
+106 y_encoded = le.fit_transform(self.y_sawah)
+107
+108 # hitung jumlah iterasi
+109 total_iterations =( len(dtw_tuner[’constraint’]) * len(dtw_tuner[’slope’]) *
+110 len(dtw_tuner[’radius’]) * len(knn_tuner) *
+111 len(date_tuner[’start’]) * len(date_tuner[’span’]))
+112
+113 print(f"Total kombinasi yang diuji: {total_iterations}\n")
+114
+115 with open(output_file, ’a’) as f:
+116 f.write(f"Total combinations to test: {total_iterations}\n\n")
+117 f.write("RESULTS:\n")
+118 f.write("-" * 80 + "\n")
+119 f.write("{:<5} {:<15} {:<20} {:<15} {:<10} {:<15}\n".format(
+120 "Iter", "Year Range", "DTW Parameters", "k", "Accuracy", "Time (s)"))
+121 f.write("-" * 80 + "\n")
+122
+123 print("Mulai hyperparameter tuning...")
+124 start_time = time.time()
+125
+126 best_acc =0
+127 best_params ={
+128 ’dtw’: None,
+129 ’k’: None,
+130 ’year’: None,
+131 ’acc’:0
+132 }
+133 best_model = None
+134
+135 iteration =0
+136 for start_year in date_tuner[’start’]:
+137 for year_span in date_tuner[’span’]:
+138 # Filter date berdasarkan rentang date yang ingin diambil
+139 year_columns =[ str(col) for col in date_columns
+--- PAGE 149 ---
+124 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+140 if int(col[:4]) >= start_year and
+141 int(col[:4]) < start_year + year_span]
+142
+143 # print(date_columns)
+144 # print(year_columns)
+145 # print(self.X_sawah.head())
+146 X_subset = self.X_sawah[year_columns]
+147
+148 for constraint in dtw_tuner[’constraint’]:
+149 for slope in dtw_tuner[’slope’]:
+150 for radius in dtw_tuner[’radius’]:
+151
+152 dtw_params ={
+153 ’constraint’: constraint,
+154 ’slope’: slope,
+155 ’radius’: radius
+156 }
+157
+158 distance_metric = self.get_metric_func(dtw_params)
+159
+160 for k in knn_tuner:
+161 iteration_start_time = time.time()
+162 iteration += 1
+163 # print(f"Testing combination {iteration}/{total_iterations}: "
+164 # f"years={start_year}-{start_year+year_span}, "
+165 # f"DTW={dtw_params}, k={k}")
+166 print(f"{iteration}/{total_iterations} ", end="")
+167
+168 knn = KNeighborsClassifier(
+169 n_neighbors=k,
+170 metric=distance_metric
+171 )
+172
+173 curr_acc = self.k_fold(knn, X=X_subset, y=y_encoded)
+174
+175 iteration_time = time.time() - iteration_start_time
+176 dtw_str = f"{constraint}"
+177 if slope is not None:
+178 dtw_str += f", slope={slope}"
+179 if radius is not None:
+180 dtw_str += f", rad={radius}"
+181
+182 with open(output_file, ’a’) as f:
+183 f.write("{:<5} {:<15} {:<20} {:<15} {:<10.4f} {:<15.2f}\n".format(
+184 iteration,
+185 f"{start_year}-{start_year+year_span}",
+186 dtw_str,
+187 k,
+188 curr_acc,
+189 iteration_time
+190 ))
+191 # print(f"Accuracy: {curr_acc:.4f}")
+192
+193 if curr_acc > best_acc:
+194 best_acc = curr_acc
+195 best_params ={
+196 ’dtw’: dtw_params,
+197 ’k’: k,
+198 ’year’:{
+199 ’start’: start_year,
+200 ’span’: year_span
+201 },
+202 ’acc’: curr_acc
+203 }
+204 best_model = knn
+205 with open(output_file, ’a’) as f:
+206 f.write(f">>> NEW BEST: Accuracy={best_acc:.4f} <<<\n")
+207 print(f"\nNew best accuracy: {best_acc:.4f} with parameters: {best_params}")
+208
+209 # Update best parameters
+210 self.best_params = best_params
+211 self.best_model = best_model.fit(X_subset, self.y_sawah)
+212
+213 total_time = time.time() - start_time
+214
+215 with open(output_file, ’a’) as f:
+216 f.write("-" * 80 + "\n\n")
+217 f.write("SUMMARY:\n")
+218 f.write(f"Total tuning time: {total_time:.2f} seconds\n")
+219 f.write(f"Best accuracy: {best_params[’acc’]:.4f}\n")
+220 f.write(f"Best parameters:\n")
+221 f.write(f"{best_params}")
+222
+223 print(f"--- Tuning completed in {total_time:.2f} seconds ---")
+224 print(f"Best parameters: {best_params}")
+225
+226 def k_fold(self, model, X=None, y=None, folds=10):
+227 skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.random_state)
+228
+229 X_sawah = X if X is not None else self.X_sawah
+230 y_sawah = y if y is not None else self.y_sawah
+231
+232 # print(X_sawah.shape)
+233 # print(y_sawah.shape)
+234 stratified_cv_scores = cross_val_score(model, X_sawah, y_sawah, cv=skf, scoring=’accuracy’)
+235 curr_acc = np.mean(stratified_cv_scores)
+236 return curr_acc
+237
+238 def get_metric_func(self, dtw_params):
+--- PAGE 150 ---
+4.4. Klasifikasi Wilayah Persawahan 125
+239 constraint = dtw_params[’constraint’]
+240 slope = dtw_params[’slope’]
+241 radius = dtw_params[’radius’]
+242
+243 def dtw_distance(x, y):
+244 x_formatted = to_time_series(x)
+245 y_formatted = to_time_series(y)
+246 dtw_score = dtw(x_formatted, y_formatted)
+247 if(constraint == ’itakura’):
+248 dtw_score = dtw(x_formatted, y_formatted, global_constraint="itakura", itakura_max_slope=slope)
+249 elif(constraint == ’sakoe_chiba’):
+250 dtw_score = dtw(x_formatted, y_formatted, global_constraint="sakoe_chiba", sakoe_chiba_radius=radius)
+251 return dtw_score
+252 return dtw_distance
+253
+254 def save_model(self):
+255 if self.best_model is None:
+256 print("Optimized model not found, try to run tune() or load_model() first")
+257 else:
+258 print("Saving...")
+259 pickle.dump(self.best_params, open(self.output_folder + ’saved_models/’ + f’params_{self.filename.split(".")[0]}.pkl’,
+’wb’))
+260 print(f"Model successfully saved in /saved_models")
+261
+262 def load_model(self, params_filename):
+263 print("Loading model...")
+264 start_time = time.time()
+265 best_params = pickle.load(open(self.output_folder + ’saved_models/’ + params_filename, ’rb’))
+266 dtw_tuner ={ ’constraint’:[ best_params[’dtw’][’constraint’]], ’slope’:[best_params[’dtw’][’slope’]], ’radius’:[
+best_params[’dtw’][’radius’]]}
+267 knn_tuner =[ best_params[’k’]]
+268 date_tuner ={ ’start’:[ best_params[’year’][’start’]], ’span’:[ best_params[’year’][’span’]]}
+269
+270 self.tune(dtw_tuner, knn_tuner, date_tuner)
+271 print(f"---Model loaded in {time.time()-start_time:.2f} seconds---")
+272
+273 def predict(self, kecamatan_filename=None):
+274 print("Predicting entire dataset...")
+275 start_time = time.time()
+276 start_year = self.best_params[’year’][’start’]
+277 year_span = self.best_params[’year’][’span’]
+278 date_columns =[ col for col in self.X_sawah.columns]
+279 year_columns =[ str(col) for col in date_columns
+280 if int(col[:4]) >= start_year and
+281 int(col[:4]) < start_year + year_span]
+282
+283 if kecamatan_filename is not None:
+284 kec_df = pd.read_csv(self.folder_name + kecamatan_filename)
+285 new_features = year_columns.copy()
+286 cluster_id = kec_df[’cluster_id’]
+287
+288 adjusted_df = kec_df.copy()
+289 adjusted_df = adjusted_df.reindex(new_features, axis=1)
+290 adjusted_df = adjusted_df.interpolate(axis=1)
+291 adjusted_df = adjusted_df.ffill(axis=1)
+292 adjusted_df = adjusted_df.bfill(axis=1)
+293 adjusted_df[’cluster_id’]= cluster_id
+294
+295 # print(year_columns)
+296 X_subset = adjusted_df[year_columns]
+297 y_pred = self.best_model.predict(X_subset)
+298
+299 final_df = kec_df.copy().drop([".geo", "system:index"], axis=1)
+300 final_df[’label’]= y_pred
+301 self.final_df = final_df
+302 else:
+303 X_subset = self.wilayah_not_labeled[year_columns]
+304 y_pred = self.best_model.predict(X_subset)
+305
+306 predict_res = self.wilayah_not_labeled.copy()
+307 predict_res[’label’]= y_pred
+308
+309 model_df = self.labeled_merged.copy()
+310
+311 final_df = pd.concat([model_df, predict_res], axis=0)
+312 self.final_df = final_df
+313
+314 sawah_clusters = self.final_df[self.final_df[’label’]= = ’sawah’]
+315 sawah_clusters.drop("label", axis=1)
+316 output_filename = self.filename if kecamatan_filename is None else kecamatan_filename
+317 sawah_clusters.to_csv(self.output_folder + f"{output_filename.split(’.’)[0]}.csv")
+318 print("--- Prediction finished in %s seconds ---" %( time.time() - start_time))
+ 
+Kode 4.14: Contoh klasiﬁkasi persawahan menggunakan kelas SawahClassification_KNNDTW pada
+Kode 4.13 
+1 classifier = SawahClassification_KNNDTW(filename=’campaka.csv’, labeled_filename=’label_sawah_campaka.csv’)
+2
+3 dtw_tuner ={ ’constraint’:[ ’sakoe_chiba’], ’slope’:[1], ’radius’:[ 1 0 ,1 5 ,2 0 ] } # sakoe_chiba hanya memanfaatkan radius
+4 knn_tuner =[ 3 ,5 ,7 ,9 ,1 1 ]
+5 date_tuner ={ ’start’:[ 2 0 1 5 ,2 0 1 8 ,2 0 2 1 ] ,’span’:[ 3 ,5 ] } # melihat time series pada rentang 3 tahun dan 5 tahun pada 2015, 2018,
+2021
+6
+7 # lakukan tuning
+8 classifier.tune(dtw_tuner=dtw_tuner, knn_tuner=knn_tuner, date_tuner=date_tuner, output_file=’temp_sawah.txt’)
+9
+--- PAGE 151 ---
+126 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+10 # simpan parameter terbaik
+11 classifier.save_model()
+12
+13 # prediksi menggunakan model terbaik
+14 classifier.predict("warungkondang.csv")
+ 
+Hasil dari klasiﬁkasi wilayah persawahan berupa ﬁle .csv yang memuat hanya clusters yang
+merupakan persawahan saja pada masing-masing kecamatan. Hasil tersebut kemudian diproses
+pada tahap selanjutnya, yaitu menemukan penanaman pandanwangi pada wilayah persawahan yang
+telah diklasiﬁkasi.
+4.5 Klasiﬁkasi Padi Pandanwangi
+Pada Bagian 4.4 sebelumnya, telah dilakukan klasiﬁkasi terhadap wilayah persawahan pada setiap
+kecamatan yang ditinjau. Hasil klasiﬁkasi tersebut kemudian diprediksi berdasarkan model klasiﬁkasi
+untuk pemisahan Padi Pandanwangi dan non-Pandanwangi. Namun, sebelum melakukan klasiﬁkasi,
+dilakukan pelatihan model berdasarkan data pelabelan yang telah dikumpulkan pada Gambar 4.12,
+dan dilakukan parameter tuning untuk mencari parameter terbaik yang digunakan model untuk
+memprediksi.
+Pendekatan klasiﬁkasi dan parameter yang di- tuning sama seperti pada bagian sebelumnya,
+yaitu menggunakan KNN-DTW. Perbedaannya, dataset pelatihan yang dikumpulkan terdapat
+pada wilayah Kecamatan Warungkondang, dan memuat dua jenis label yang berbeda, yaitu Padi
+Pandanwangi dan non-Pandanwangi. Berikut merupakan daftar parameter yang di- tuning pada
+model klasiﬁkasi Padi Pandanwangi:
+• k: [3, 7, 11, 15, 19].
+• constraint: [’default’, ’sakoe_chiba’, ’itakura’].
+• slope: [2, 3, 4, 5].
+• radius: [15, 30, 60].
+• start_year: [2015, 2018, 2021].
+• span: [3, 5, 7] (rentang tahun).
+Hasil yang didapat berdasarkan parameter tuning tersebut terdapat pada Tabel 4.15. Berda-
+sarkan tuning tersebut, metode Sakoe-Chiba DTW pada rentang tahun 2021 hingga 2025, dengan
+radius = 15 dan k =3 merupakan parameter yang terbaik untuk mengklasiﬁkasi jenis padi. Berda-
+sarkan model terbaik tersebut, dilakukan klasiﬁkasi pada persawahan dari setiap kecamatan. Hasil
+terhadap klasiﬁkasi per kecamatan tersebut terdapat pada Tabel ?? dan Gambar 4.21.
+Tabel 4.15: Hasil Parameter Tuning KNN-DTW Terbaik Klasiﬁkasi Padi
+Rentang T ahun T erbaik Metode DTW Parameter T erbaik Akurasi
+2018–2025 Default – 99.24%
+2021–2025 Sakoe-Chiba radius = 15, k =3 99.69%
+2018–2023 Itakura slope = 2, k = 11 99.38%
+Dapat terlihat bahwa pada setiap kecamatan, proporsi penanaman padi Pandanwangi berbeda.
+Wilayah persawahan yang luas belum tentu mempunyai penanaman padi Pandanwangi yang cukup
+luas.
+Hasil dari klasiﬁkasi tersebut, dioutput sebagai .csv, yang mewakili lokasi-lokasi penanaman
+padi Pandanwangi dari masing-masing kecamatan, yang akan dicek keterkaitannya terhadap faktor
+cuaca atau iklim. Implementasi terhadap klasiﬁkasi padi Pandanwangi dengan metode KNN-DTW
+cukup mirip seperti Kode 4.13, sehingga hanya akan dicantumkan pada Bagian Lampiran.
+--- PAGE 152 ---
+4.5. Klasifikasi Padi Pandanwangi 127
+Tabel 4.16: Luas Sawah Pandanwangi di Setiap Kecamatan (hektar)
+Kecamatan Luas Sawah Total Luas Sawah Pandanwangi Proporsi
+W ARUNGKONDANG 1865.31 719.12 38.5%
+GEKBRONG 819.19 362.89 44.3%
+CUGENANG 1100.87 550.95 50.0%
+CIANJUR 919.62 77.13 8.4%
+CAMPAKA 1935.64 1445.44 74.7%
+CILAKU 2441.18 73.82 3.0%
+CIBEBER 2885.96 334.36 11.58%
+(a) Warungkondang
+ (b) Gekbrong
+ (c) Cugenang
+(d) Cianjur
+ (e) Cilaku
+ (f) Cibeber
+(g) Campaka
+Gambar 4.21: Visualisasi hasil klasiﬁkasi padi Pandanwangi pada setiap kecamatan ( polygon kuning).
+Setelah setiap wilayah penanaman Pandanwangi pada masing-masing kecamatan didapat,
+dilakukan visualisasi time series untuk rata-rata EVI pada salah satu kecamatan, yaitu Kecamatan
+Warungkondang. Pada visualisasi yang terlihat pada Gambar 4.22, graﬁk time series belum
+memperlihatkan pola pertumbuhan Padi Pandanwangi, sebagaimana yang telah diujicoba pada
+Bagian 4.1.4.2 sebelumnya, tepatnya pada Gambar 4.13. Terdapat dua kemungkinan masalah:
+--- PAGE 153 ---
+128 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+1. Klasiﬁkasi persawahan masih belum cukup baik, sehingga terdapat lebih banyak data yang
+bukan merupakan persawahan yang dapat termisklasiﬁkasi sebagai Padi Pandanwangi, dan
+menjadi noise pada data, karena nilainya tidak representatif.
+2. Padi Pandanwangi tidak ditanam pada waktu yang serentak, sehingga time series mengaku-
+mulasi rata-rata nilai EVI pada rentang penanaman yang beragam.
+Sehingga, solusi yang mungkin dilakukan adalah:
+1. Melakukan pengumpulan data berlabel ulang untuk wilayah persawahan.
+2. Mengelompokkan data berdasarkan waktu tanam (Januari, Februari, Maret, April, Mei, dan
+Juni)
+Pada bagian selanjutnya, akan dilakukan iterasi kedua dari klasiﬁkasi, dengan melakukan
+percobaan pada kedua solusi tersebut.
+2022 2023 2024 2025
+0
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+Gambar 4.22: Time series EVI Pandanwangi hasil klasiﬁkasi pada Kecamatan Warungkondang
+4.6 Iterasi Kedua Pada Metode Klasiﬁkasi
+Sebelum menentukan untuk mengumpulkan data berlabel kembali, dilakukan pengelompokan
+terlebih dahulu terhadap waktu penanaman. Hasil pada pengelompokan tersebut dapat terlihat
+seperti pada Tabel 4.17, dengan metode pengelompokan yang digunakan adalah seperti berikut:
+1. Melakukan penghapusan nilai EVI outliers pada setiap cluster.
+2. Melakukan smoothing pada data time series dengan moving average .
+3. Mencari nilai minimum EVI pada rentang waktu tertentu (misal tahun 2022 hingga 2023).
+4. Mengekstrak bulan, di mana terjadi nilai minum EVI tersebut.
+5. Menetapkan bulan tersebut sebagai bulan penanaman dan menyimpannya menjadi satu
+kolom. (kategori bulan penanaman hanya berkisar 1 hingga 6, karena siklus menanam padi
+Pandanwangi berulang setiap 6 bulan).
+Tabel 4.17: Hasil pengelompokan waktu penanaman dalam bentuk CSV
+cluster_id 20171005 20171010 20171015 20171020 ... planting_month
+1 0.42 0.51 0.47 0.53 ... 1
+2 0.35 0.38 0.41 0.44 ... 2
+3 0.61 0.58 0.63 0.59 ... 1
+4 0.29 0.31 0.27 0.33 ... 3
+5 0.55 0.52 0.57 0.54 ... 5
+--- PAGE 154 ---
+4.6. Iterasi Kedua Pada Metode Klasifikasi 129
+Tabel 4.18: Jumlah cluster pada setiap bulan tanam
+Bulan Penanaman Jumlah Cluster
+1 200
+2 239
+3 78
+4 85
+5 138
+6 196
+Implementasi pengelompokan tersebut dilakukan pada rentang waktu 2022 hingga 2023 pada
+Kecamatan Warungkondang, sebagai visualisasi awal, sekaligus penentu perlunya pengumpulan
+data label terbaru (lihat Kode 4.15). Jumlah clusters pada setiap kelompok penanaman dapat
+dilihat pada Tabel 4.18. Kemudian, time series EVI pada masing-masing kelompok divisualisasikan
+untuk melihat apakah pengelompokan berhasil mengekstraksi pola pertumbuhan padi yang lebih
+baik (lihat Gambar 4.23).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(a) Bulan ke-1 (Januari).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(b) Bulan ke-2 (Februari).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(c) Bulan ke-3 (Maret).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(d) Bulan ke-4 (April).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(e) Bulan ke-5 (Mei).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(f) Bulan ke-6 (Juni).
+Gambar 4.23: Time series EVI Pandanwangi Kecamatan Warungkondang pada kelompok pena-
+naman yang berbeda.
+--- PAGE 155 ---
+130 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+Kode 4.15: Implementasi pengelompokan terhadap data time series padi Pandanwangi 
+1 start_year =2 0 2 2
+2 end_year =2 0 2 3
+3
+4 temporal_resolution = ’5D’
+5
+6 # melakukan moving_average smoothing dengan window 6 atau 1 bulan (karena resolusi temporalnya 5 hari)
+7 def moving_average(array, window_size=6):
+8 return pd.Series(array).rolling(window=window_size, center=True, min_periods=1).mean().to_numpy()
+9
+10 # method untuk menghapus outliers, diberikan sebuah pd.Series
+11 def remove_outliers(array):
+12 array = np.array(array, dtype=float)
+13 q1 = np.percentile(array,2 5 )
+14 q3 = np.percentile(array,7 5 )
+15 iqr = q3 - q1
+16 lower = q1 -1 . 5 * iqr
+17 upper = q3 +1 . 5 * iqr
+18 # print(f’lower bound:{lower}’)
+19 # print(f’upper bound:{upper}’)
+20 mask =( array >= lower)&( array <= upper)
+21
+22 # mengapply mask pada array berdasarkan outliers, dan memberikan nilai null pada bilangan outliers
+23 cleaned = np.where(mask, array, np.nan)
+24
+25 # mengisi nilai outliers yang dibuang tersebut dengan interpolasi linear
+26 series = pd.Series(cleaned).interpolate().ffill().bfill()
+27 return series.to_numpy()
+28
+29 def detect_planting_month(row, time_cols):
+30 evi_values = row[time_cols].values
+31 cleaned_evi = remove_outliers(evi_values) # membersihkan outliers
+32 smoothed_evi = moving_average(cleaned_evi) # melakukan smoothing, agar terbentuk trend, misalnya bulanan
+33
+34 # membuat array yang berisi dates saja
+35 dates = pd.to_datetime(time_cols, format=’%Y%m%d’)
+36
+37 # mengambil index array pada nilai terrendah
+38 min_index = smoothed_evi.argmin()
+39
+40 # mengambil date pada array dates dengan indeks yang didapat pada min_index
+41 planting_date = dates[min_index]
+42 planting_month = planting_date.month
+43
+44
+45 # siklus pandanwangi terulang setiap 6 bulan, sehingga waktu penanaman yang dimulai setelah bulan keenam, juga mulai ditanam
+pada siklus 6 bulan sebelumnya.
+46 if(planting_month >6 ) :
+47 return (planting_month %6 )+1
+48 return planting_month
+49
+50 def vegetation_planttime_preprocessing(df):
+51 df = df.iloc[:, 2:] # membuang kolom noise hasil export
+52 df = df[df.label == ’pandanwangi’]
+53 cluster_id = df[’cluster_id’]
+54 df = df.set_index(’cluster_id’)
+55 df = df.iloc[:, :-1] # membuat kolom ’label’
+56 df = df.T # melakukan transpose
+57 indexes = df.index
+58 new_indexes =[ ]
+59
+60 # mengonversi setiap indeksnya dari string time dengan format ’yyyymmdd’ menjadi datetime
+61 for i in indexes:
+62 date = pd.to_datetime(i, format=’%Y%m%d’)
+63 new_indexes.append(date)
+64 df[’datetime’]= new_indexes
+65 df = df.set_index(’datetime’)
+66
+67 # mengatur jarak antar data time series, dengan konsisten, yaitu 5 hari, dengan nilai yang diambil pada setiap titik datanya
+merupakan nilai titik data yang terdekat
+68 df = df.asfreq(temporal_resolution, method=’nearest’)
+69
+70 # mengisi jika terdapat data null
+71 df = df.interpolate().ffill().bfill()
+72
+73 # memfilter dataframe berdasarkan tahunnya
+74 df = df[(df.index.year >= start_year)&( df.index.year <= end_year)]
+75
+76 # mengembalikan index menjadi string dengan format ’yyyymmdd’
+77 df.index = df.index.strftime(’%Y%m%d’)
+78 df = df.T # melakukan transpose kembali agar formatnya kembali kepada bentuk wide (kolom merupakan date dan baris merupakan
+clusters)
+79 df[’cluster_id’]= cluster_id.values
+80 df = df.reset_index(drop=True)
+81
+82 # mengambil setiap waktu yang mempunyai poin data
+83 time_cols =[ col for col in df.columns if col != ’cluster_id’]
+84
+85 # mengaplikasikan penentuan bulan tanam pada setiap barisnya atau setiap clusternya
+86 df[’planting_month’]= df.apply(lambda row: detect_planting_month(row, time_cols=time_cols), axis=1)
+87 return df
+88
+89 raw_veg_df = pd.read_csv(vegetation_dir)
+90 plant_time_df = vegetation_planttime_preprocessing(raw_veg_df)
+91 plant_time_df = plant_time_df[[’cluster_id’, ’planting_month’]] # hanya mengambil cluster_id dan planting_month untuk kemudian
+dimerge
+ 
+--- PAGE 156 ---
+4.6. Iterasi Kedua Pada Metode Klasifikasi 131
+Secara keseluruhan, sebagian besar hasil klasiﬁkasi memperlihatkan pola pertumbuhan pa-
+di dengan cukup baik (dapat dilihat pertambahan dan pengurangan nilai EVI-nya dengan je-
+las). Namun, pada kelompok tertentu seperti kelompok penanaman bulan ke-4 dan ke-5 (lihat
+Gambar 4.30d dan 4.30e), pola pertumbuhan dari Padi Pandanwangi tidak cukup terlihat. Hal
+tersebut mungkin terjadi akibat misklasiﬁkasi terhadap wilayah non-Persawahan atau sawah non-
+Pandanwangi yang mempunyai ciri serupa (lihat Gambar 4.24 dan 4.25). Sehingga, percobaan
+berikutnya dilakukan dengan mengumpulkan data pelabelan baru untuk melihat pengaruhnya
+terhadap data time series .
+2022 2023 2024
+0
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+Gambar 4.24: Contoh Time series EVI pada data non-persawahan (bangunan)
+2022 2023 2024
+0
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+Gambar 4.25: Contoh Time series EVI pada persawahan non-Pandanwangi
+4.6.1 Pengumpulan Data Berlabel Baru Untuk Klasiﬁkasi Persawahan
+Pada pengumpulan data sebelumnya (lihat Bagian 4.3.2), data pelatihan yang dikumpulkan berasal
+dari Kecamatan Campaka, yang mempunyai wilayah keseluruhan terluas. Hasil evaluasi model yang
+dilatih berdasarkan data tersebut sebenarnya sudah cukup baik, dengan akurasi klasiﬁkasi sebesar
+86%. Namun, pada interpretasi visual lebih lanjut (lihat Gambar 4.26, ditemukan bahwa area yang
+dilingkari merah yang merupakan hutan lebat, termisklasiﬁkasi sebagai sawah, dan pada area yang
+dilingkari kuning yang merupakan persawahan, namun tidak teridentiﬁkasi sebagai sawah. Oleh
+karena itu, dikumpulkan data pelatihan baru pada Kecamatan Warungkondang, untuk melihat
+apakah terdapat peningkatan pada hasil klasiﬁkasi.
+--- PAGE 157 ---
+132 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+Gambar 4.26: Visualisasi yang memperlihatkan misklasiﬁkasi persawahan pada Kecamatan Wa-
+rungkondang
+Gambar 4.27: Data pelatihan baru untuk klasiﬁkasi persawahan, yang dikumpulkan pada Kecamatan
+Warungkondang. Warna hijau merupakan label sawah dan warna biru merupakan label non-sawah.
+Gambar 4.27 menunjukkan pengumpulan data pelatihan baru terhadap klasiﬁkasi persawahan,
+pada Kecamatan Warungkondang. Dikumpulkan sebanyak 440 clusters yang berlabel sawah
+dan 448 clusters yang berlabel non-sawah. Selanjutnya, model yang dilatih akan menggunakan
+parameter terbaik pada Bagian 4.4 sebelumnya, yaitu pada rentang tahun 2015 hingga 2020, dengan
+metode Sakoe-Chiba, dan parameter terbaik radius = 15 dan k = 11 . Hasil evaluasi dari model
+yang dilatih menggunakan dataset pelatihan baru tertera pada Tabel 4.19, di mana akurasi model
+meningkat secara signiﬁkan dibandingkan dengan dataset pelatihan sebelumnya.
+--- PAGE 158 ---
+4.6. Iterasi Kedua Pada Metode Klasifikasi 133
+Tabel 4.19: Hasil Parameter Tuning KNN-DTW Terbaik Klasiﬁkasi Sawah di Warungkondang
+Rentang T ahun T erbaik Metode DTW Parameter T erbaik Akurasi
+2015–2022 Default tidak dilakukan –
+2015–2020 Sakoe-Chiba radius = 15, k = 11 97.18%
+2015–2022 Itakura tidak dilakukan –
+Gambar 4.28: Hasil klasiﬁkasi persawahan iterasi kedua pada Kecamatan Warungkondang
+Pada hasil klasiﬁkasi yang baru, misklasiﬁkasi terhadap wilayah persawahan pada Kecamatan
+Warungkondang telah berkurang secara signiﬁkan, dapat terlihat pada Gambar 4.28.S e b e l u m
+melakukan klasiﬁkasi persawahan pada seluruh kecamatan, dilakukan pengujian terlebih dahulu
+dengan melakukan klasiﬁkasi jenis padi dengan model yang telah dilatih pada Bagian 4.5 sebelumnya.
+Hasil dari ekstraksi time series padi Pandanwangi pada Gambar 4.29 menunjukkan bahwa secara
+keseluruhan, hasil time series pada iterasi kedua memperlihatkan pola pertumbuhan yang lebih
+kontras atau tidak stagnan. Kemudian, dapat dilihat juga bahwa pada visualisasi setiap kelompok
+tanamnya, menunjukkan graﬁk yang lebih baik dibandingkan iterasi pertama (lihat Gambar 4.30,
+di mana pola pertumbuhan pada kelompok tanam bulan ke-4 dan ke-5 lebih terlihat.
+2022 2023 2024 20250.2
+0.3
+0.4
+0.5
+0.6
+Year
+Index Value
+EVI
+(a) Iterasi 1
+2022 2023 20240.2
+0.3
+0.4
+0.5
+0.6
+Year
+Index Value
+EVI
+(b) Iterasi 2
+Gambar 4.29: Visualisasi time series EVI Padi Pandanwangi pada iterasi pertama (kiri) dan iterasi
+kedua (kanan).
+--- PAGE 159 ---
+134 Bab 4. Penambangan Data Untuk Mengkaji Kaitan F aktor Iklim Terhadap Vegetasi
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(a) Bulan ke-1 (Januari).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(b) Bulan ke-2 (Februari).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(c) Bulan ke-3 (Maret).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(d) Bulan ke-4 (April).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(e) Bulan ke-5 (Mei).
+2022 2023 2024 20250
+0.2
+0.4
+0.6
+0.8
+1
+Year
+Index Value
+EVI
+(f) Bulan ke-6 (Juni).
+Gambar 4.30:Time seriesEVI Pandanwangi Kecamatan Warungkondang pada kelompok pena-
+naman yang berbeda padaiterasi kedua.
+Dengan hal tersebut, model pada iterasi kedua ini ditetapkan untuk melakukan klasiﬁkasi
+persawahan pada setiap kecamatan secara ﬁnal, dengan hasil klasiﬁkasi yang tertera pada Tabel 4.20
+dan Gambar4.31.
+Tabel 4.20: Luas Setiap Lahan Sawah, Dengan Klasiﬁkasi KNN-DTW Iterasi Kedua (hektar)
+Kecamatan Luas Lahan Sawah Acuan (2022) Luas Lahan Sawah Klasiﬁkasi
+W ARUNGKONDANG 1963.0 1582.91
+GEKBRONG 1053.5 967.57
+CUGENANG 1688.2 1485.89
+CIANJUR 1018.0 973.84
+CAMPAKA 1657.1 1271.01
+CILAKU 2438.2 2100.34
+CIBEBER 3238.5 2676.27
+--- PAGE 160 ---
+4.6. Iterasi Kedua Pada Metode Klasifikasi 135
+(a) Warungkondang
+ (b) Gekbrong
+ (c) Cugenang
+(d) Cianjur
+ (e) Cilaku
+ (f) Cibeber
+(g) Campaka
+Gambar 4.31: Visualisasi hasil klasiﬁkasi persawahan iterasi kedua ( polygon hijau).
+Selanjutnya, klasiﬁkasi terhadap jenis padi dilakukan juga pada masing-masing kecamatan,
+dengan model klasiﬁkasi yang masih sama seperti yang terdapat pada iterasi pertama. Hasil
+klasiﬁkasi tersebut dapat terlihat pada Tabel 4.21 dan Gambar 4.32.
+Tabel 4.21: Luas Sawah Pandanwangi di Setiap Kecamatan (hektar)
+Kecamatan Luas Sawah Total Luas Sawah Pandanwangi Proporsi
+W ARUNGKONDANG 1582.91 561.39 36.0%
+GEKBRONG 967.57 407.05 42.1%
+CUGENANG 1485.89 641.64 43.2%
+CIANJUR 973.84 86.21 8.9%
+CAMPAKA 1271.01 783.43 61.6%
+CILAKU 2100.34 85.20 4.0%
+CIBEBER 2676.27 283.87 10.6%
