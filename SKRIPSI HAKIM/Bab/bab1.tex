@@ -1,44 +1,95 @@
-%versi 2 (8-10-2016) 
 \chapter{Pendahuluan}
 \label{chap:intro}
-   
+
 \section{Latar Belakang}
-\label{sec:label}
+\label{sec:latar_belakang}
 
-Bagian ini akan diisi dengan apa yang melatarbelakangi pembuatan template skripsi ini.
-Termasuk juga masalah-masalah yang akan dihadapi untuk membuatnya, termasuk kurangnya kemampuan penguasaan \LaTeX{} sehingga template ini dibuat dengan mengandalkan berbagai contoh yang tersebar di dunia maya, yang digabung-gabung menjadi satu jua.
-Bagian lain juga akan dilengkapi, untuk sementara diisi dengan lorem ipsum versi bahasa inggris.
+Sektor pertanian, khususnya komoditas tanaman padi, memegang peranan yang sangat fundamental dalam menjaga stabilitas ketahanan pangan nasional dan menyokong perekonomian masyarakat Indonesia. Keberagaman sumber daya genetik lokal di berbagai daerah menghasilkan sejumlah varietas padi unggul spesifik lokasi yang memiliki nilai ekonomi, cita rasa, dan identitas budaya yang tinggi. Salah satu varietas lokal unggulan yang memperoleh perhatian strategis di tingkat daerah maupun nasional adalah Padi Varietas Rojolele Srinuk di Kabupaten Klaten, Jawa Tengah.
 
-\dtext{5-10}
+Varietas Rojolele Srinuk merupakan hasil pemuliaan tanaman melalui teknologi mutasi radiasi sinar gama yang dikembangkan atas kerja sama antara Badan Tenaga Nuklir Nasional (BATAN, yang kini terintegrasi ke dalam Badan Riset dan Inovasi Nasional/BRIN) dengan Pemerintah Kabupaten Klaten~\cite{batan:19:proposal}. Pengembangan ini secara resmi diakui dan dilepas oleh Kementerian Pertanian Republik Indonesia melalui Surat Keputusan Menteri Pertanian Nomor 127/HK.540/C/01/2021. Varietas Srinuk diciptakan untuk menyempurnakan varietas lokal induk Rojolele yang terkenal pulen dan beraroma wangi, namun memiliki kelemahan agronomis yang signifikan, seperti umur tanam yang sangat panjang (sekitar 155 hari), postur tanaman yang terlalu tinggi (mencapai 158 cm) sehingga mudah rebah saat terpaan angin kencang, serta kerentanan tinggi terhadap serangan hama penggerek batang padi kuning (\textit{Scirpophaga incertulas Wlk})~\cite{nurhasanah:20:evaluasi}. Melalui penyempurnaan genetik, Rojolele Srinuk memiliki umur panen yang jauh lebih genjah yaitu sekitar 120 hari, tinggi tanaman yang lebih pendek dan kokoh (sekitar 113 cm), serta ketahanan yang lebih baik terhadap hama dan penyakit tanpa mengurangi cita rasa pulen serta aroma khasnya.
+
+Meskipun Pemerintah Kabupaten Klaten telah menetapkan Rojolele Srinuk sebagai komoditas unggulan daerah yang diprioritaskan budidayanya, pemantauan terhadap luas tanam dan distribusinya di lapangan masih menghadapi kendala ketersediaan data yang spesifik. Laporan statistik resmi dari instansi pemerintah, seperti Badan Pusat Statistik (BPS) dan Dinas Pertanian setempat, umumnya menyajikan data luas panen dan produksi padi secara agregat pada tingkat kecamatan atau kabupaten tanpa memuat rincian spasial dari masing-masing varietas. Di sisi lain, pencatatan data varietas berbasis survei lapangan konvensional menuntut alokasi anggaran yang besar, pengerahan tenaga penyuluh yang banyak, serta durasi pengumpulan data yang panjang, sehingga sulit diselenggarakan secara berkala dan berkelanjutan pada hamparan pertanian yang luas.
+
+Untuk mengatasi permasalahan tersebut, teknologi penginderaan jauh (\textit{remote sensing}) berbasis wahana antariksa menawarkan metode pemantauan lahan pertanian yang objektif, berbiaya efektif, dan berdaya jangkau luas~\cite{lillesand:15:remote}. Pemanfaatan data citra satelit observasi bumi memungkinkan perekaman pantulan radiasi gelombang elektromagnetik dari tutupan kanopi tanaman secara berulang (\textit{repetitive}) sepanjang waktu. Citra multi-spektral resolusi menengah-tinggi seperti Sentinel-2 dari \textit{European Space Agency} (ESA) menyediakan resolusi spasial 10 meter dengan waktu kunjung ulang (\textit{revisit time}) 5 hari pada konstelasi ganda. Karakteristik ini sangat ideal untuk menangkap fase-fase kritis pertumbuhan tanaman semusim seperti padi. Di samping itu, ketersediaan arsip citra satelit Landsat yang dikelola oleh USGS/NASA menyediakan rekam jejak pengamatan permukaan bumi jangka panjang selama lebih dari tiga dekade.
+
+Data spektral yang terekam pada kanal merah (\textit{Red}), inframerah dekat (\textit{Near-Infrared}/NIR), dan inframerah gelombang pendek (\textit{Shortwave-Infrared}/SWIR) dapat ditransformasikan menjadi indeks vegetasi, antara lain \textit{Enhanced Vegetation Index} (EVI)~\cite{huete:02:evi}, \textit{Normalized Difference Vegetation Index} (NDVI), dan \textit{Normalized Difference Moisture Index} (NDMI). Jika indeks vegetasi tersebut disusun secara berkala membentuk deret waktu (\textit{time series}) selama satu siklus musim tanam, akan terbentuk profil kurva fenologi tanaman. Pola dinamika kurva tersebut merefleksikan tahapan agronomis padi secara runtut, mulai dari fase penggenangan air dan pengolahan lahan (\textit{land preparation}), fase pertumbuhan vegetatif, fase pembungaan dan pengisian bulir generatif (\textit{heading/flowering}), hingga fase pematangan dan pengeringan kanopi (\textit{maturation/senescence}). Karakteristik siklus tumbuh Rojolele Srinuk yang berdurasi 120 hari menghasilkan pola temporal yang unik dibandingkan dengan varietas padi berumur sangat genjah lainnya (seperti Inpari atau Ciherang) maupun vegetasi non-padi.
+
+Penelitian pemantauan vegetasi berbasis deret waktu satelit telah berhasil dibuktikan pada penelitian sebelumnya oleh Pratama~\cite{pratama:25:vegetasi}. Penelitian tersebut mengembangkan metodologi klasifikasi area Padi Pandanwangi di Kabupaten Cianjur menggunakan integrasi citra satelit pada platform komputasi awan \textit{Google Earth Engine} (GEE)~\cite{gorelick:17:gee}. Dalam penelitian Pratama~\cite{pratama:25:vegetasi}, reduksi volume data piksel raster dilakukan secara signifikan melalui segmentasi superpixel \textit{Simple Non-Iterative Clustering} (SNIC)~\cite{achanta:17:snic}, dan klasifikasi deret waktu kurva EVI berhasil dilakukan menggunakan algoritma \textit{K-Nearest Neighbors} yang dipadukan dengan \textit{Dynamic Time Warping} (KNN-DTW)~\cite{sakoe:78:dtw} dengan akurasi mencapai 98\%. Keberhasilan tersebut membuktikan bahwa perpaduan representasi objek superpixel SNIC dan metrik jarak DTW sangat efektif dalam mengatasi variasi kalender tanam antarpetani yang tidak serempak.
+
+Mengadopsi dan mengembangkan kerangka kerja tersebut, penelitian tugas akhir ini berfokus pada deteksi dan identifikasi Padi Varietas Rojolele Srinuk di Kabupaten Klaten, khususnya pada sentra budidaya Kecamatan Delanggu dan Kecamatan Tulung. Tantangan utama yang dihadapi di wilayah Klaten adalah kompleksitas bentang lahan sawah yang berdekatan langsung dengan kawasan permukiman perdesaan, vegetasi perkebunan, serta keragaman kalender tanam yang sangat dinamis. Untuk memecahkan tantangan ini, klasifikasi dirancang menggunakan pendekatan hierarkis dua tahap (\textit{Two-Stage Classifier}). Pada Tahap 1, dilakukan penyaringan awal untuk memisahkan lahan sawah aktif dari objek non-sawah. Selanjutnya pada Tahap 2, klaster sawah yang telah terisolasi diklasifikasikan menggunakan algoritma KNN-DTW terhadap template profil fenologi untuk membedakan Padi Rojolele Srinuk dari varietas pembanding secara akurat. Pendekatan ini diharapkan menghasilkan data spasial sebaran tanam Rojolele Srinuk yang presisi guna mendukung evaluasi kebijakan pertanian di Kabupaten Klaten.
 
 \section{Rumusan Masalah}
-\label{sec:rumusan}
-Bagian ini akan diisi dengan penajaman dari masalah-masalah yang sudah diidentifikasi di bagian sebelumnya. 
+\label{sec:rumusan_masalah}
 
-\dtext{6}
+Berdasarkan latar belakang yang telah dipaparkan, rumusan masalah dalam penelitian tugas akhir ini adalah sebagai berikut:
+\begin{enumerate}
+    \item Bagaimana karakteristik pola kurva fenologi deret waktu indeks vegetasi (EVI, NDVI, dan NDMI) Padi Varietas Rojolele Srinuk dibandingkan dengan varietas padi lainnya dan objek non-sawah di Kabupaten Klaten?
+    \item Bagaimana efektivitas penerapan algoritma segmentasi superpixel \textit{Simple Non-Iterative Clustering} (SNIC) pada platform \textit{Google Earth Engine} dalam mereduksi volume data citra satelit tanpa merusak integritas batas pematang sawah?
+    \item Bagaimana merancang dan membangun model klasifikasi hierarkis dua tahap (\textit{Two-Stage Classifier}) berbasis KNN-DTW yang mampu menyaring lahan sawah dan mengidentifikasi Padi Rojolele Srinuk secara spesifik?
+    \item Bagaimana tingkat akurasi dan performa model klasifikasi yang dihasilkan dalam mendeteksi Padi Rojolele Srinuk berdasarkan evaluasi terhadap data kebenaran lapangan (\textit{ground truth})?
+\end{enumerate}
 
 \section{Tujuan}
 \label{sec:tujuan}
-Akan dipaparkan secara lebih terperinci dan tersturkur apa yang menjadi tujuan pembuatan template skripsi ini
 
-\dtext{7}
+Tujuan yang ingin dicapai melalui pelaksanaan penelitian tugas akhir ini adalah:
+\begin{enumerate}
+    \item Menganalisis dan mengekstraksi kurva fenologi deret waktu indeks vegetasi Padi Rojolele Srinuk berbasis citra satelit multi-sensor di wilayah studi Kabupaten Klaten.
+    \item Mengimplementasikan segmentasi superpixel SNIC untuk mereduksi volume data piksel citra satelit secara efisien dengan tetap mempertahankan geometri batas bidang sawah.
+    \item Merancang dan mengimplementasikan model klasifikasi hierarkis dua tahap berbasis KNN-DTW untuk membedakan lahan sawah dari non-sawah serta mengklasifikasikan Padi Rojolele Srinuk dari varietas pembanding.
+    \item Mengukur dan mengevaluasi kinerja model klasifikasi yang dibangun menggunakan metrik \textit{confusion matrix}, presisi, \textit{recall}, dan \textit{F1-score} terhadap data survei lapangan resmi.
+\end{enumerate}
 
 \section{Batasan Masalah}
-\label{sec:batasan}
-Untuk mempermudah pembuatan template ini, tentu ada hal-hal yang harus dibatasi, misalnya saja bahwa template ini bukan berupa style \LaTeX{} pada umumnya (dengan alasannya karena belum mampu jika diminta membuat seperti itu)
+\label{sec:batasan_masalah}
 
-\dtext{8}
+Ruang lingkup dan batasan masalah pada penelitian ini ditetapkan sebagai berikut:
+\begin{enumerate}
+    \item Wilayah studi penelitian dibatasi pada wilayah administratif Kabupaten Klaten, Provinsi Jawa Tengah, dengan fokus pengujian mendalam pada sentra budidaya padi di Kecamatan Delanggu dan Kecamatan Tulung.
+    \item Data citra satelit yang digunakan bersumber dari satelit Sentinel-2 Level-2A (\textit{Harmonized Bottom-of-Atmosphere Reflectance}) dan Landsat (Landsat 5 TM, Landsat 7 ETM+, Landsat 8 OLI, dan Landsat 9 OLI-2) yang diakses melalui platform \textit{Google Earth Engine} (GEE).
+    \item Periode pengamatan dan evaluasi klasifikasi difokuskan pada rentang tahun 2019 hingga 2026. Pembatasan ini didasarkan pada ketersediaan data Sentinel-2 resolusi 10 meter serta momentum resmi pelepasan varietas Rojolele Srinuk oleh Kementerian Pertanian pada tahun 2021. Data citra Landsat (1988--2026) digunakan sebagai data pendukung kontinuitas historis jangka panjang.
+    \item Indeks vegetasi yang diekstraksi dan dianalisis dibatasi pada \textit{Enhanced Vegetation Index} (EVI), \textit{Normalized Difference Vegetation Index} (NDVI), dan \textit{Normalized Difference Moisture Index} (NDMI).
+    \item Segmentasi objek lahan dilakukan menggunakan algoritma superpixel \textit{Simple Non-Iterative Clustering} (SNIC) dengan parameter \textit{size} 15 piksel, \textit{compactness} 1, dan \textit{connectivity} 8 arah.
+    \item Algoritma klasifikasi deret waktu yang dibangun dibatasi pada model hierarkis dua tahap, di mana Tahap 1 menggunakan penyaringan berbasis karakteristik kurva dinamika fenologi sawah, dan Tahap 2 menggunakan algoritma \textit{K-Nearest Neighbors} berbasis metrik jarak \textit{Dynamic Time Warping} (KNN-DTW).
+    \item Validasi akurasi klasifikasi menggunakan data kebenaran lapangan (\textit{ground truth}) koordinat poligon sawah berlabel resmi dari Dinas Ketahanan Pangan dan Pertanian Kabupaten Klaten serta perkumpulan petani setempat pada siklus musim tanam tahun 2026.
+\end{enumerate}
 
 \section{Metodologi}
-\label{sec:metlit}
-Tentunya akan diisi dengan metodologi yang serius sehingga templatenya terkesan lebih serius.
+\label{sec:metodologi}
 
-\dtext{9}
+Penelitian tugas akhir ini dilaksanakan melalui enam tahapan metodologi ilmiah yang sistematis, sebagaimana diuraikan berikut:
+
+\begin{enumerate}
+    \item \textbf{Studi Literatur}: Mengkaji landasan teoretis mengenai karakteristik morfologi dan agronomis Padi Rojolele Srinuk, konsep penginderaan jauh multi-spektral, formulasi indeks vegetasi (EVI, NDVI, NDMI), algoritma segmentasi superpixel SLIC/SNIC, perumusan jarak dinamis \textit{Dynamic Time Warping} (DTW), paradigma klasifikasi hierarkis, serta telaah kritis terhadap hasil penelitian Vico Pratama~\cite{pratama:25:vegetasi}.
+    
+    \item \textbf{Pengumpulan dan Pra-pemrosesan Data Citra}: Mengakuisisi koleksi citra satelit Sentinel-2 L2A dan Landsat melalui API \textit{Google Earth Engine}. Melakukan penyaringan citra dengan batas tutupan awan (\textit{cloud cover}) kurang dari 20\%, menerapkan masking awan dan bayangan awan berbasis \textit{Google Cloud Score+} dan pita kualitas (\textit{Scene Classification Layer}/QA60), melakukan pemotongan (\textit{clipping}) sesuai batas wilayah studi, serta mengkalkulasi kanal indeks vegetasi EVI, NDVI, dan NDMI.
+    
+    \item \textbf{Segmentasi Citra Superpixel SNIC}: Menerapkan algoritma SNIC pada komposit citra 5-band (Red, Green, Blue, NIR, SWIR1) di platform GEE. Langkah ini mengelompokkan jutaan piksel homogen menjadi ribuan segmen superpixel yang merepresentasikan kesatuan bidang petak sawah secara kompak dan presisi.
+    
+    \item \textbf{Ekstraksi Fitur Deret Waktu dan Pelabelan Ground Truth}: Mengekstraksi nilai rata-rata spektral indeks vegetasi dari setiap superpixel untuk seluruh tanggal akuisisi citra sepanjang siklus tanam. Menerapkan interpolasi linear dan penapisan \textit{Savitzky-Golay} untuk mengisi kekosongan data akibat awan. Mengaitkan klaster superpixel dengan data koordinat survei lapangan (\textit{ground truth}) untuk membentuk himpunan data latih dan data uji berlabel (Rojolele Srinuk, varietas non-Srinuk, dan non-sawah).
+    
+    \item \textbf{Perancangan dan Pembangunan Klasifikasi Hierarkis Dua Tahap}:
+    \begin{itemize}
+        \item \textbf{Tahap 1 (Sawah vs Non-Sawah)}: Membangun mekanisme penyaringan untuk menyeleksi klaster yang memiliki karakteristik vegetasi musiman aktif dan menyingkirkan objek statis (permukiman, jalan, badan air, vegetasi permanen).
+        \item \textbf{Tahap 2 (Rojolele Srinuk vs Non-Srinuk)}: Membangun model KNN-DTW pada klaster sawah yang lolos dari Tahap 1. Mengukur kesamaan pola temporal kurva EVI klaster terhadap kurva referensi (\textit{template}) Srinuk dan non-Srinuk guna mengatasi ketidaksinkronan jadwal tanam antarpetani.
+    \end{itemize}
+    
+    \item \textbf{Evaluasi Kinerja dan Analisis Hasil}: Mengukur kinerja klasifikasi menggunakan matriks konfusi (\textit{confusion matrix}), menghitung metrik akurasi, presisi, \textit{recall}, dan \textit{F1-score} untuk masing-masing tahap maupun performa hierarkis keseluruhan. Melakukan analisis spasial terhadap peta sebaran hasil klasifikasi di Kecamatan Delanggu dan Tulung serta menganalisis faktor penyebab kesalahan klasifikasi (\textit{error analysis}).
+\end{enumerate}
 
 \section{Sistematika Pembahasan}
-\label{sec:sispem}
-Rencananya Bab 2 akan berisi petunjuk penggunaan template dan dasar-dasar \LaTeX.
-Mungkin bab 3,4,5 dapt diisi oleh ketiga jurusan, misalnya peraturan dasar skripsi atau pedoman penulisan, tentu jika berkenan.
-Bab 6 akan diisi dengan kesimpulan, bahwa membuat template ini ternyata sungguh menghabiskan banyak waktu.
+\label{sec:sistematika}
 
-\dtext{10}
+Naskah skripsi ini disusun ke dalam lima bab dengan sistematika pembahasan sebagai berikut:
+
+\begin{itemize}
+    \item \textbf{BAB 1 PENDAHULUAN}: Menguraikan latar belakang permasalahan, rumusan masalah, tujuan penelitian, batasan masalah, metodologi penelitian yang ditempuh, serta sistematika penulisan laporan skripsi.
+    
+    \item \textbf{BAB 2 LANDASAN TEORI}: Memaparkan teori-teori dasar dan kajian pustaka yang mendasari penelitian, meliputi profil agronomis Padi Rojolele Srinuk, konsep penginderaan jauh, karakteristik sensor satelit Sentinel-2 dan Landsat, formulasi indeks vegetasi, segmentasi citra superpixel SLIC dan SNIC, perumusan matematis \textit{Dynamic Time Warping} (DTW) dan KNN, konsep umum klasifikasi hierarkis, metrik evaluasi kinerja model, serta tinjauan komparatif terhadap penelitian terdahulu.
+    
+    \item \textbf{BAB 3 METODOLOGI PENELITIAN DAN PERANCANGAN SISTEM}: Menjelaskan secara rinci arsitektur sistem dan metodologi penyelesaian masalah, mencakup analisis kebutuhan data, alur pra-pemrosesan citra, perancangan segmentasi superpixel SNIC pada GEE, ekstraksi deret waktu indeks vegetasi, perancangan model klasifikasi hierarkis dua tahap (Tahap 1 pemisahan sawah dan Tahap 2 identifikasi Srinuk dengan KNN-DTW), serta skenario pengujian dan validasi data lapangan.
+    
+    \item \textbf{BAB 4 IMPLEMENTASI DAN PEMBAHASAN HASIL PENGUJIAN}: Menguraikan lingkungan implementasi perangkat lunak, penyajian hasil pra-pemrosesan dan segmentasi SNIC, karakteristik kurva fenologi hasil ekstraksi, evaluasi performa klasifikasi Tahap 1, Tahap 2, dan performa gabungan, analisis matriks konfusi, interpretasi peta sebaran spasial padi di Delanggu dan Tulung, serta pembahasan mendalam terhadap galat klasifikasi.
+    
+    \item \textbf{BAB 5 KESIMPULAN DAN SARAN}: Menyajikan kesimpulan menyeluruh yang menjawab seluruh tujuan penelitian berdasarkan hasil pengujian empiris, serta memberikan saran-saran konstruktif untuk pengembangan dan penyempurnaan penelitian di masa mendatang.
+\end{itemize}
