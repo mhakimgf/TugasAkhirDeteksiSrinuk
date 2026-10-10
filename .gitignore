@@ -27,3 +27,26 @@ desktop.ini
 *.log
 scratch/
 data/processed/checkpoints/
+
+# Bulk Generated Plots (Local Output Only)
+grafik_evi_2018_2025/
+grafik_evi_cluster_allvarietas/
+
+# Reports and LaTeX Documents (Not Pure Code)
+Progress report/
+SKRIPSI HAKIM/
+
+# LaTeX Build Artifacts & Compiled PDFs
+*.aux
+*.bbl
+*.blg
+*.fls
+*.lof
+*.lot
+*.nlo
+*.out
+*.toc
+*.synctex.gz
+*.bak
+*.pdf
+*.zip
