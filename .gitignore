@@ -36,6 +36,9 @@ grafik_evi_cluster_allvarietas/
 Progress report/
 SKRIPSI HAKIM/
 
+# Agent Knowledge Base, Notes & Workspaces
+.agents/
+
 # LaTeX Build Artifacts & Compiled PDFs
 *.aux
 *.bbl
