@@ -36,16 +36,45 @@ Metodologi sistem ini mengadopsi dan menyempurnakan kerangka kerja ilmiah skrips
 
 ---
 
+## 🔄 Diagram Alur Kerja Metodologi (Pipeline Penambangan Data)
+
+Alur penambangan data satelit, segmentasi superpixel spasial, dan klasifikasi hierarkis deret waktu diimplementasikan sesuai dengan diagram alir berikut:
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Input[Pengumpulan Data]
+    
+    subgraph Data Input
+        Input --> DSpasial[Data Spasial Delanggu & Sentinel-2 Kemarau]
+        Input --> DGEE[Penyiapan Koleksi Citra GEE Sentinel-2 + Landsat 1988-2026]
+        Input --> DTrainSawah[Data Pelatihan Sawah vs Non-Sawah]
+        Input --> DTrainSrinuk[Data Pelatihan Rojolele Srinuk vs Varietas Lain]
+    end
+
+    DSpasial --> SNIC[Clustering SNIC]
+    SNIC --> VecClust[Vektor Hasil Klaster Superpixel]
+
+    DGEE --> SLFinal[SL-final Koleksi Citra Fusi Bebas Awan]
+
+    VecClust & SLFinal --> ExtTS[Ekstraksi Data Time Series EVI / NDVI]
+    ExtTS --> CSV_All[CSV Time Series EVI Klaster Delanggu]
+
+    CSV_All & DTrainSawah --> Stage1[Klasifikasi Tahap 1: Wilayah Persawahan]
+    Stage1 --> CSV_Sawah[CSV Time Series Klaster Sawah Aktif]
+
+    CSV_Sawah & DTrainSrinuk --> Stage2[Klasifikasi Tahap 2: Rojolele Srinuk]
+    Stage2 --> CSV_Srinuk[CSV Klaster Terdeteksi Rojolele Srinuk]
+
+    CSV_Srinuk --> Analisis[Analisis Deskriptif Fenologi & WebGIS]
+    Analisis --> Finish([Finish])
+```
+
+---
+
 ## 📁 Struktur Direktori Repositori
 
 ```
 PROGRAM/
-├── .agents/
-│   └── research_notes/
-│       ├── 01_analisis_mendalam_skripsi_vico.md     # AI Knowledge Base dekonstruksi skripsi Vico
-│       ├── 04_roadmap_sandboxing_program.md        # Roadmap penelitian & milestone
-│       └── 05_katalog_asset_gee_mhakimgf.md         # Katalog 26 Asset GEE (users/mhakimgf)
-│
 ├── data/
 │   ├── raw/
 │   │   ├── Data Dikasih/
