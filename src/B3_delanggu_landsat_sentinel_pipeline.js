@@ -34,7 +34,7 @@ var date_end   = '2026-05-31';
 
 // 2. Fungsi Resampling Bikubik Landsat (30m -> 10m Grid)
 var resampleBicubic = function(image) {
-  return image.resample('bicubic').reproject({
+  return ee.Image(image).resample('bicubic').reproject({
     crs: 'EPSG:32749', // UTM Zone 49S
     scale: 10
   }).copyProperties(image, ['system:time_start', 'system:id']);
@@ -203,6 +203,7 @@ var joined = joinBeforeAfter.apply({
 });
 
 var best_16_days = function(img) {
+  img = ee.Image(img);
   var neighbors = ee.List(img.get('neighbors'));
   var maxValueImage = ee.ImageCollection.fromImages(neighbors).max();
   var filled = img.unmask(maxValueImage);
@@ -235,3 +236,43 @@ var latest_img = sl_gapfilled.sort('system:time_start', false).first();
 Map.addLayer(latest_img.select('evi').clip(roi), {min: 0.1, max: 0.8, palette: ['blue', 'white', 'green']}, 'EVI Terkini');
 Map.addLayer(pt_srinuk, {color: 'red'}, 'Sample Ground Truth Srinuk');
 Map.addLayer(pt_inpari32, {color: 'blue'}, 'Sample Ground Truth Inpari 32');
+
+// =============================================================================
+// 7. Ekspor Tabel Deret Waktu (Time-Series) ke Google Drive (CSV)
+// =============================================================================
+// Gabungkan sampel ground truth ke dalam FeatureCollection
+var sample_fc = ee.FeatureCollection([
+  ee.Feature(pt_srinuk, {'plot_id': 'srinuk_delanggu', 'varietas': 'Rojolele Srinuk'}),
+  ee.Feature(pt_inpari32, {'plot_id': 'inpari32_delanggu', 'varietas': 'Inpari 32'})
+]);
+
+// Ekstraksi nilai rata-rata EVI & NDVI dari seluruh koleksi citra fusi
+var extracted_ts = sl_gapfilled.map(function(img) {
+  var dateStr = ee.Date(img.get('system:time_start')).format('YYYYMMdd');
+  var sensor = img.get('sensor');
+  return img.select(['evi', 'ndvi']).reduceRegions({
+    collection: sample_fc,
+    reducer: ee.Reducer.mean(),
+    scale: 10,
+    crs: 'EPSG:32749'
+  }).map(function(f) {
+    return f.set({
+      'date': dateStr,
+      'sensor': sensor
+    });
+  });
+}).flatten();
+
+var valid_ts = extracted_ts.filter(ee.Filter.notNull(['evi']));
+
+// Siapkan tugas ekspor tabel ke Google Drive (Muncul di tab "Tasks" di panel kanan atas GEE)
+Export.table.toDrive({
+  collection: valid_ts,
+  description: 'export_timeseries_landsat_sentinel_delanggu',
+  folder: 'earthengine_delanggu',
+  fileNamePrefix: 'timeseries_landsat_sentinel_delanggu_1988_2026',
+  fileFormat: 'CSV',
+  selectors: ['plot_id', 'varietas', 'date', 'sensor', 'evi', 'ndvi']
+});
+
+print('Tugas ekspor CSV deret waktu telah disiapkan! Silakan buka tab "Tasks" di panel kanan atas GEE, lalu klik "Run" untuk mengunduh CSV ke Google Drive.');

@@ -1,0 +1,89 @@
+================================================================================
+INFORMASI TAUTAN (LINK) KODE PROGRAM TUGAS AKHIR
+================================================================================
+Judul Tugas Akhir : Analisis Pola Pertumbuhan Padi Varietas Rojolele Srinuk 
+                    Menggunakan Data Satelit Time Series (Studi Kasus: Klaten)
+Kode Topik        : VSM6004BDS
+Nama Mahasiswa    : Muhammad Hakim Ghifari Akiyat
+NPM               : 6182201096
+Program Studi     : Informatika - Fakultas Teknologi Informasi dan Sains (FTIS)
+                    Universitas Katolik Parahyangan (UNPAR)
+Dosen Pembimbing  : Prof. Dr. Veronica Sri Moertini, Ir., M.T.
+================================================================================
+
+Kepada Yth. Dosen Pembimbing / Reviewer,
+Berikut adalah daftar tautan lengkap repositori kode program, skrip komputasi 
+Google Earth Engine (GEE), arsip Google Drive, serta katalog data spasial 
+yang digunakan dalam penelitian Tugas Akhir ini:
+
+--------------------------------------------------------------------------------
+1. REPOSITORI KODE PROGRAM UTAMA (GITHUB)
+--------------------------------------------------------------------------------
+Repositori ini memuat seluruh kode sumber Python modular (fusi multi-sensor, 
+segmentasi SNIC, spatial join ground truth, dan pemodelan Two-Stage KNN-DTW), 
+Jupyter Notebook interaktif, serta diagram alir metodologi:
+
+URL GitHub Repo : https://github.com/mhakimgf/TugasAkhirDeteksiSrinuk
+Branch          : main
+Akses           : Publik / Terbuka untuk Dosen
+
+--------------------------------------------------------------------------------
+2. FOLDER GOOGLE DRIVE KHUSUS DOSEN PEMBIMBING (FOLDER AGENT)
+--------------------------------------------------------------------------------
+Folder Google Drive terpusat yang memuat dokumen tautan resmi, arsip kode program 
+(ZIP), dan berkas pelengkap yang dapat diunduh langsung:
+
+• URL Folder Google Drive Dosen : https://drive.google.com/drive/folders/10z0yVGjtOA17qn-0e9VM5nudhHGn8Rlp?usp=drive_link
+• Dokumen Tautan Google Docs     : https://docs.google.com/document/d/1rxLFcrXI5Q23YY4x7HtKAyXHRYUaOBKdQ787V613l3k/edit
+• Berkas Arsip Program (ZIP)     : PROGRAM_KODE_SRINUK.zip (tersimpan di folder Drive di atas)
+
+--------------------------------------------------------------------------------
+3. SKRIP KOMPUTASI AWAN GOOGLE EARTH ENGINE (GEE CODE EDITOR)
+--------------------------------------------------------------------------------
+Skrip JavaScript mandiri yang dapat langsung dibuka dan dijalankan pada browser 
+Google Earth Engine Code Editor melalui tautan langsung (snapshot aktif):
+
+• Skrip 1 - Ekstraksi Data Hasil Clustering dengan EVI:
+  https://code.earthengine.google.com/60cbe96f11e415823b0147ffe172f0c9
+  (Berkas lokal: src/B1_delanggu_snic_gee_editor.js)
+
+• Skrip 2 - Visualisasi & Load Poligon Sawah Klaten:
+  https://code.earthengine.google.com/e62b8c5f5f906b3909d6e4ca2f4d3a68
+  (Berkas lokal: src/B2_snic_parameter_tuning.js)
+
+• Skrip 3 - Visualisasi & Load Poligon Sawah Salatiga (Inpari 32 Pembanding):
+  https://code.earthengine.google.com/153fd6eb00f1c1bd2bef42999508292a
+  (Berkas lokal: src/B3_delanggu_landsat_sentinel_pipeline.js)
+
+--------------------------------------------------------------------------------
+4. REPOSITORI ASSET SPASIAL & GROUND TRUTH DI GOOGLE EARTH ENGINE
+--------------------------------------------------------------------------------
+Akun GEE Root: users/mhakimgf/
+Project ID   : ardent-particle-480118-k7
+
+Katalog 26 Asset Spasial Terverifikasi:
+• users/mhakimgf/gadm41_IDN                    (Batas Administrasi Resmi GADM 4.1)
+• users/mhakimgf/polygon_sawah                 (Poligon Acuan Lahan Baku Sawah)
+• users/mhakimgf/non_sawah                     (Poligon Tutupan Non-Sawah Delanggu)
+• users/mhakimgf/ground_truth_klaten_final_labeled (Dataset Ground Truth Klaten)
+• users/mhakimgf/Salatiga/ground_truth_salatiga_final_labeled (Ground Truth Salatiga)
+• users/mhakimgf/rojolele_srinuk_delanggu_1_minggu_200326
+• users/mhakimgf/rojolele_srinuk_delanggu_1_bulan_2_minggu_220326
+• users/mhakimgf/rojolele_srinuk_delanggu_1_5_bulan_200326
+• users/mhakimgf/rojolele_srinuk_delanggu_2_bulan_200326
+• users/mhakimgf/rojolele_srinuk_delanggu_2_5_bulan_200326
+• users/mhakimgf/rojolele_srinuk_delanggu_3_bulan_200326
+• users/mhakimgf/inpari32_delanggu_3_bulan_200326
+• users/mhakimgf/inpari32_delanggu_3_5_bulan_200326
+• users/mhakimgf/inpari32_tulung_1_bulan_200326
+• users/mhakimgf/inpari32_tulung_3_bulan_200326
+• users/mhakimgf/inpari33_tulung_1_bulan_200326
+• users/mhakimgf/mapan_tulung_3_bulan_200326
+• users/mhakimgf/membramo_delanggu_3_bulan_200326
+• users/mhakimgf/Salatiga/inpari32_tingkir_2_bulan_260326 (Petak A, B, C)
+• users/mhakimgf/Salatiga/inpari32_tingkir_3_bulan_260326 (Petak 1, 2, 3, 4)
+
+================================================================================
+Catatan: Seluruh berkas kode program, data ekstraksi time-series EVI, dan 
+model klasifikasi Two-Stage KNN-DTW dapat direplikasi secara mandiri.
+================================================================================

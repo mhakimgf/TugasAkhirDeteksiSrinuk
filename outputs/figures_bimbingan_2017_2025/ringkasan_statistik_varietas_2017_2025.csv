@@ -1,0 +1,5 @@
+varietas,total_observasi,jumlah_klaster,evi_mean,evi_std,evi_min,evi_median,evi_max,ndvi_mean,ndvi_median,ndvi_max
+Inpari 32,2894,5,0.35,0.106,-2.26,0.35,0.753,0.549,0.556,1.297
+Membramo,604,1,0.365,0.079,0.118,0.36,0.609,0.573,0.582,0.816
+Rojolele Srinuk,9504,16,0.366,0.098,0.06,0.37,0.785,0.57,0.582,0.903
+non-sawah,17808,30,0.273,0.132,0.009,0.235,0.873,0.43,0.396,0.932
